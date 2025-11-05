@@ -160,6 +160,7 @@ class SettingsView(BaseView):
             self.logger.info(f"Current storage selection: {current_storage}")
         
         # Dropdown change handlers
+        def on_file_option_change(e):
             self.page.session.set("selected_file_option", e.control.value)
             self.save_persistent_settings({"selected_file_option": e.control.value})
             self.logger.info(f"File option selected: {e.control.value}")
@@ -240,7 +241,7 @@ class SettingsView(BaseView):
                     label="Choose a File Selection Option",
                     value=current_file_option if current_file_option else "",
                     options=[ft.dropdown.Option(option) for option in file_selector_options],
-                    on_change=on_file_selector_change,
+                    on_change=on_file_option_change,
                     width=300
                 )
             ]),

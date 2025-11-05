@@ -791,12 +791,29 @@ class CSVSelectorView(FileSelectorView):
             
             # Extract non-empty values from the selected column
             if column_name in df.columns:
-                # Get non-null, non-empty values and convert to strings
-                column_values = df[column_name].dropna().astype(str).str.strip()
+                # First, filter out rows where the first column starts with '#' (comment rows)
+                first_column = df.columns[0]  # Get the name of the first column
+                if first_column in df.columns:
+                    # Convert first column to string and check for comment marker
+                    comment_mask = df[first_column].astype(str).str.strip().str.startswith('#')
+                    # Filter out comment rows from the entire dataframe
+                    filtered_df = df[~comment_mask]
+                    
+                    # Log how many comment rows were filtered
+                    comment_count = comment_mask.sum()
+                    if comment_count > 0:
+                        self.logger.info(f"Filtered out {comment_count} comment rows starting with '#' in column '{first_column}'")
+                else:
+                    # If for some reason we can't find the first column, use original dataframe
+                    filtered_df = df
+                    comment_count = 0
+                
+                # Now extract values from the target column in the filtered dataframe
+                column_values = filtered_df[column_name].dropna().astype(str).str.strip()
                 # Filter out empty strings after stripping
                 non_empty_values = column_values[column_values != ''].tolist()
                 
-                self.logger.info(f"Extracted {len(non_empty_values)} non-empty values from column '{column_name}'")
+                self.logger.info(f"Extracted {len(non_empty_values)} values from column '{column_name}' (after filtering {comment_count} comment rows)")
                 return non_empty_values
             else:
                 self.logger.error(f"Column '{column_name}' not found in CSV file")
