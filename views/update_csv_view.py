@@ -168,6 +168,11 @@ class UpdateCSVView(BaseView):
                 if comment_count > 0:
                     self.logger.info(f"Removing {comment_count} comment row(s) from values.csv")
                 
+                # Blank out collection_id column if it exists
+                if 'collection_id' in csv_data_filtered.columns:
+                    csv_data_filtered['collection_id'] = ''
+                    self.logger.info(f"Blanked out collection_id column in values.csv")
+                
                 # Save with minimal quoting
                 csv_data_filtered.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
                 self.logger.info(f"Saved values.csv to: {values_csv_path} ({len(csv_data_filtered)} rows)")
@@ -352,7 +357,7 @@ class UpdateCSVView(BaseView):
                 # Populate specific columns
                 new_row['originating_system_id'] = unique_id
                 new_row['dc:identifier'] = handle_url  # Use Handle URL format in Alma mode
-                new_row['collection_id'] = '81342586470004641'  # CSV file record gets different collection
+                # new_row['collection_id'] = '81342586470004641'  # Leave collection_id as-is
                 new_row['dc:type'] = 'Dataset'  # CSV file is a dataset
                 
                 # Use the sanitized temp CSV filename for both dc:title and file_name_1
@@ -424,23 +429,8 @@ class UpdateCSVView(BaseView):
                 if handle_count > 0:
                     self.logger.info(f"Set {handle_count} dc:identifier cell(s) to Handle URL format")
             
-            # Step 3.6: Fill collection_id cells with Pending Review collection (Alma mode only)
-            filled_collections = 0
-            if current_mode == "Alma" and 'collection_id' in self.csv_data.columns:
-                pending_review_id = '81313013130004641'  # Pending Review collection
-                for idx in range(len(self.csv_data)):
-                    # Skip comment rows
-                    if self.is_comment_row(idx):
-                        continue
-                    
-                    cell_value = self.csv_data.at[idx, 'collection_id']
-                    # Check if empty (empty string, None, or NaN)
-                    # if pd.isna(cell_value) or str(cell_value).strip() == '':   # This logic was not right, the collection_id should ALWAYS be 'pending review'!
-                    if True:
-                        self.csv_data.at[idx, 'collection_id'] = pending_review_id
-                        filled_collections += 1
-                if filled_collections > 0:
-                    self.logger.info(f"Filled {filled_collections} empty collection_id cell(s) with Pending Review collection")
+            # Step 3.6: collection_id cells are left as-is (not modified)
+            # Users manage collection_id values themselves
             
             # Step 3.65: Process Alma compound parent/child relationships
             if current_mode == "Alma" and 'compoundrelationship' in self.csv_data.columns:
@@ -652,8 +642,6 @@ class UpdateCSVView(BaseView):
             
             if current_mode == "Alma" and filled_ids > 0:
                 message_parts.append(f"Generated {filled_ids} ID(s)")
-            if current_mode == "Alma" and filled_collections > 0:
-                message_parts.append(f"Set {filled_collections} collection(s) to Pending Review")
             
             # Only mention dginfo in Alma mode
             if current_mode == "Alma":
@@ -710,7 +698,7 @@ class UpdateCSVView(BaseView):
             # Populate specific columns
             new_row['originating_system_id'] = unique_id
             new_row['dc:identifier'] = handle_url  # Use Handle URL format in Alma mode
-            new_row['collection_id'] = '81342586470004641'  # CSV file record gets different collection
+            # new_row['collection_id'] = '81342586470004641'  # Leave collection_id as-is
             new_row['dc:type'] = 'Dataset'  # CSV file is a dataset
             
             # Use the sanitized temp CSV filename for both dc:title and file_name_1
