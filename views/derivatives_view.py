@@ -7,7 +7,6 @@ This module contains the DerivativesView class for creating file derivatives.
 import flet as ft
 from views.base_view import BaseView
 import os
-from subprocess import call
 from thumbnail import generate_thumbnail, generate_pdf_thumbnail
 
 

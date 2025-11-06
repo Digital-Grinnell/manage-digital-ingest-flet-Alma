@@ -2,7 +2,6 @@ import flet as ft
 import os
 import utils
 from thumbnail import generate_thumbnail
-from subprocess import call
 # from azure.identity import DefaultAzureCredential
 # from azure.storage.blob import BlobServiceClient
 import json
