@@ -8,6 +8,7 @@ import json
 import sys
 import logging
 import time
+from difflib import SequenceMatcher
 
 # Unique ID generation
 # ----------------------------------------------------------------------
@@ -49,35 +50,20 @@ def generate_unique_id(page):
 # ----------------------------------------------------------------------
 def calculate_string_similarity(str1, str2):
     """
-    Calculate similarity between two strings using a simple approach.
+    Calculate similarity between two strings using difflib.SequenceMatcher.
+    This considers the order and position of characters, not just their presence.
     Returns a percentage (0-100) of how similar the strings are.
     """
     if str1 == str2:
         return 100
     
-    # Simple substring matching approach
-    if str1 in str2 or str2 in str1:
-        # Calculate ratio based on length overlap
-        overlap = min(len(str1), len(str2))
-        total = max(len(str1), len(str2))
-        return int((overlap / total) * 100)
+    # Use SequenceMatcher for proper sequence-based similarity
+    # This considers character order and position
+    matcher = SequenceMatcher(None, str1, str2)
+    ratio = matcher.ratio()
     
-    # Count common characters
-    common_chars = 0
-    str1_chars = list(str1)
-    str2_chars = list(str2)
-    
-    for char in str1_chars:
-        if char in str2_chars:
-            common_chars += 1
-            str2_chars.remove(char)
-    
-    # Calculate similarity based on common characters
-    total_chars = max(len(str1), len(str2))
-    if total_chars == 0:
-        return 0
-    
-    return int((common_chars / total_chars) * 100)
+    # Convert to percentage (0-100) and round to integer
+    return int(ratio * 100)
 
 def sanitize_filename(filename):
     """
@@ -104,7 +90,7 @@ def sanitize_filename(filename):
 def perform_fuzzy_search(base_path, target_filename, threshold=90):
     """
     Recursively search for files in base_path and find the best match for target_filename
-    using simple string matching.
+    using difflib.SequenceMatcher for proper sequence-based similarity.
     
     Args:
         base_path (str): The directory to start searching from
@@ -118,19 +104,17 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
         best_match_path = None
         best_match_ratio = 0
         
+        # Search through ALL files to find the absolute best match
+        # Don't terminate early, even on 100% match, to ensure we find the best one
         for root, dirs, files in os.walk(base_path):
             for filename in files:
-                # Calculate simple string similarity ratio
+                # Calculate sequence-based similarity ratio
                 ratio = calculate_string_similarity(filename.lower(), target_filename.lower())
                 
                 # Update best match if this ratio is higher
                 if ratio > best_match_ratio:
                     best_match_ratio = ratio
                     best_match_path = os.path.join(root, filename)
-                    
-                    # If we found a perfect match, we can return immediately
-                    if ratio == 100:
-                        return (best_match_path, ratio)
         
         # Always return the best match path and ratio found, regardless of threshold
         # The caller will decide whether to accept it based on the threshold

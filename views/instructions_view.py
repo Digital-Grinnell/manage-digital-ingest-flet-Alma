@@ -126,6 +126,10 @@ class InstructionsView(BaseView):
                     )
                 )
             
+            # Extract just the three aws s3 cp commands (Steps 2a, 2b, 2c)
+            cp_commands = [cmd for comment, cmd in commands if 'aws s3 cp' in cmd]
+            all_cp_commands = '\n'.join(cp_commands)
+            
             # Create dialog to show the script
             dialog = ft.AlertDialog(
                 title=ft.Text("Alma S3 Upload Script Generated", weight=ft.FontWeight.BOLD),
@@ -138,12 +142,25 @@ class InstructionsView(BaseView):
                             weight=ft.FontWeight.BOLD
                         ),
                         ft.Divider(),
-                        ft.Text(
-                            "AWS Commands:",
-                            size=14,
-                            weight=ft.FontWeight.BOLD,
-                            color=colors['primary_text']
-                        ),
+                        ft.Row([
+                            ft.Text(
+                                "AWS Commands:",
+                                size=14,
+                                weight=ft.FontWeight.BOLD,
+                                color=colors['primary_text']
+                            ),
+                            ft.Container(expand=True),
+                            ft.ElevatedButton(
+                                "Copy All 3 cp Commands",
+                                icon=ft.Icons.COPY_ALL,
+                                on_click=lambda e: self.copy_to_clipboard(e, all_cp_commands),
+                                style=ft.ButtonStyle(
+                                    color=ft.Colors.WHITE,
+                                    bgcolor=ft.Colors.BLUE_700
+                                ),
+                                tooltip="Copy all three 'aws s3 cp' commands at once"
+                            )
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                         ft.Text(
                             "Click the copy button to copy each command to clipboard",
                             size=11,
@@ -157,7 +174,7 @@ class InstructionsView(BaseView):
                             height=450
                         ),
                     ], spacing=5),
-                    width=700,
+                    width=750,
                 ),
                 actions=[
                     ft.TextButton("Close", on_click=lambda e: self.close_dialog(dialog))
