@@ -105,22 +105,76 @@ class UpdateCSVView(BaseView):
             self.logger.error(f"Error loading CSV: {e}")
             return False
     
+    def is_comment_row(self, idx):
+        """
+        Check if a CSV row is a comment (first column starts with #).
+        
+        Args:
+            idx: Row index to check
+            
+        Returns:
+            bool: True if row is a comment, False otherwise
+        """
+        if self.csv_data is None or idx >= len(self.csv_data):
+            return False
+        
+        # Get the first column name
+        first_column = self.csv_data.columns[0]
+        
+        # Get the value in the first column for this row
+        first_value = str(self.csv_data.at[idx, first_column]).strip()
+        
+        # Check if it starts with #
+        return first_value.startswith('#')
+    
     def save_csv_data(self):
         """
-        Save the current CSV data back to file.
+        Save the current CSV data back to file with minimal quoting.
         
         Returns:
             bool: True if successful, False otherwise
         """
         try:
             if self.csv_data is not None and self.temp_csv_path:
-                # Save without index and preserve all values as text (no scientific notation)
-                self.csv_data.to_csv(self.temp_csv_path, index=False, encoding='utf-8', quoting=1)
-                self.logger.info(f"Saved CSV data to: {self.temp_csv_path}")
+                # Save with minimal quoting (only quote fields when necessary)
+                # quoting=csv.QUOTE_MINIMAL (0) - only quote fields containing special characters
+                self.csv_data.to_csv(self.temp_csv_path, index=False, encoding='utf-8', quoting=0)
+                self.logger.info(f"Saved CSV data to: {self.temp_csv_path} ({len(self.csv_data)} rows)")
                 return True
             return False
         except Exception as e:
             self.logger.error(f"Error saving CSV: {e}")
+            return False
+    
+    def save_values_csv(self, values_csv_path):
+        """
+        Save a values.csv file with comment rows removed and minimal quoting.
+        This is specifically for the values.csv output file.
+        
+        Args:
+            values_csv_path: Path to save the values.csv file
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            if self.csv_data is not None:
+                # Remove comment rows before saving
+                first_column = self.csv_data.columns[0]
+                mask = ~self.csv_data[first_column].astype(str).str.startswith('#', na=False)
+                csv_data_filtered = self.csv_data[mask].copy()
+                
+                comment_count = len(self.csv_data) - len(csv_data_filtered)
+                if comment_count > 0:
+                    self.logger.info(f"Removing {comment_count} comment row(s) from values.csv")
+                
+                # Save with minimal quoting
+                csv_data_filtered.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
+                self.logger.info(f"Saved values.csv to: {values_csv_path} ({len(csv_data_filtered)} rows)")
+                return True
+            return False
+        except Exception as e:
+            self.logger.error(f"Error saving values.csv: {e}")
             return False
     
     def update_cell(self, row_index, column_name, new_value):
@@ -202,6 +256,9 @@ class UpdateCSVView(BaseView):
             self.logger.info(f"csv_filenames_for_matched count: {len(csv_filenames_for_matched) if csv_filenames_for_matched else 0}")
             self.logger.info(f"CSV columns available: {list(self.csv_data.columns)}")
             
+            # Get first column name for comment checking
+            first_column = self.csv_data.columns[0]
+            
             if temp_file_info and csv_filenames_for_matched:
                 for idx, file_info in enumerate(temp_file_info):
                     sanitized_filename = file_info.get('sanitized_filename', '')
@@ -215,8 +272,9 @@ class UpdateCSVView(BaseView):
                     
                     self.logger.info(f"Processing file {idx}: csv_filename='{csv_filename}', sanitized='{sanitized_filename}'")
                     
-                    # Find the row with this CSV filename
-                    mask = self.csv_data[column_name] == csv_filename
+                    # Find the row with this CSV filename (excluding comment rows)
+                    mask = ((self.csv_data[column_name] == csv_filename) & 
+                           (~self.csv_data[first_column].str.startswith('#', na=False)))
                     self.logger.info(f"Mask matches: {mask.sum()} rows")
                     
                     if mask.any():
@@ -316,6 +374,10 @@ class UpdateCSVView(BaseView):
                 filled_ids = 0
                 if 'originating_system_id' in self.csv_data.columns:
                     for idx in range(len(self.csv_data)):
+                        # Skip comment rows
+                        if self.is_comment_row(idx):
+                            continue
+                        
                         cell_value = self.csv_data.at[idx, 'originating_system_id']
                         # Check if empty (empty string, None, or NaN)
                         if pd.isna(cell_value) or str(cell_value).strip() == '':
@@ -339,6 +401,10 @@ class UpdateCSVView(BaseView):
             if current_mode == "Alma" and 'dc:identifier' in self.csv_data.columns and 'originating_system_id' in self.csv_data.columns:
                 handle_count = 0
                 for idx in range(len(self.csv_data)):
+                    # Skip comment rows
+                    if self.is_comment_row(idx):
+                        continue
+                    
                     orig_id = self.csv_data.at[idx, 'originating_system_id']
                     # Extract numeric portion from originating_system_id (e.g., "dg_1234567890" -> "1234567890")
                     if not pd.isna(orig_id) and str(orig_id).strip() != '':
@@ -363,6 +429,10 @@ class UpdateCSVView(BaseView):
             if current_mode == "Alma" and 'collection_id' in self.csv_data.columns:
                 pending_review_id = '81313013130004641'  # Pending Review collection
                 for idx in range(len(self.csv_data)):
+                    # Skip comment rows
+                    if self.is_comment_row(idx):
+                        continue
+                    
                     cell_value = self.csv_data.at[idx, 'collection_id']
                     # Check if empty (empty string, None, or NaN)
                     # if pd.isna(cell_value) or str(cell_value).strip() == '':   # This logic was not right, the collection_id should ALWAYS be 'pending review'!
@@ -379,6 +449,11 @@ class UpdateCSVView(BaseView):
                 
                 idx = 0
                 while idx < len(self.csv_data):
+                    # Skip comment rows
+                    if self.is_comment_row(idx):
+                        idx += 1
+                        continue
+                    
                     compound = str(self.csv_data.at[idx, 'compoundrelationship']).strip()
                     
                     # Check if this is a parent
@@ -402,6 +477,11 @@ class UpdateCSVView(BaseView):
                         
                         # Loop through following rows to find children
                         while child_idx < len(self.csv_data):
+                            # Skip comment rows
+                            if self.is_comment_row(child_idx):
+                                child_idx += 1
+                                continue
+                            
                             child_compound = str(self.csv_data.at[child_idx, 'compoundrelationship']).strip()
                             
                             if not child_compound.startswith('child'):
@@ -474,8 +554,12 @@ class UpdateCSVView(BaseView):
                 if 'objectid' in self.csv_data.columns and 'parentid' in self.csv_data.columns:
                     self.logger.info("Processing parent/child relationships...")
                     
-                    # Find all parent records (rows where parentid is empty/NaN)
-                    parents_mask = self.csv_data['parentid'].isna() | (self.csv_data['parentid'] == '')
+                    # Get first column name for comment checking
+                    first_column = self.csv_data.columns[0]
+                    
+                    # Find all parent records (rows where parentid is empty/NaN and not comment rows)
+                    parents_mask = ((self.csv_data['parentid'].isna() | (self.csv_data['parentid'] == '')) & 
+                                   (~self.csv_data[first_column].str.startswith('#', na=False)))
                     parent_indices = self.csv_data[parents_mask].index
                     
                     for parent_idx in parent_indices:
@@ -484,8 +568,9 @@ class UpdateCSVView(BaseView):
                         if pd.isna(parent_objectid) or str(parent_objectid).strip() == '':
                             continue
                             
-                        # Find children (rows where parentid matches this parent's objectid)
-                        children_mask = self.csv_data['parentid'] == parent_objectid
+                        # Find children (rows where parentid matches this parent's objectid and not comment rows)
+                        children_mask = ((self.csv_data['parentid'] == parent_objectid) & 
+                                        (~self.csv_data[first_column].str.startswith('#', na=False)))
                         children_indices = self.csv_data[children_mask].index
                         
                         if len(children_indices) > 0:
@@ -532,17 +617,20 @@ class UpdateCSVView(BaseView):
                 else:
                     self.logger.warning("dginfo column not found in CSV")
             
-            # Save the updated CSV
+            # Save the updated CSV (keeps comment rows)
             self.save_csv_data()
             self.edits_applied = True
             
-            # Step 5: In Alma mode, create a copy named values.csv in temp directory
+            # Step 5: In Alma mode, create values.csv with comment rows removed
             if current_mode == "Alma":
                 temp_dir = self.page.session.get("temp_directory")
-                if temp_dir and self.temp_csv_path:
+                if temp_dir:
                     try:
                         values_csv_path = os.path.join(temp_dir, "values.csv")
-                        shutil.copy2(self.temp_csv_path, values_csv_path)
+                        self.save_values_csv(values_csv_path)
+                        self.logger.info(f"Created values.csv in temp directory: {values_csv_path}")
+                    except Exception as e:
+                        self.logger.error(f"Error creating values.csv: {e}")
                         self.logger.info(f"Created values.csv copy in temp directory: {values_csv_path}")
                     except Exception as e:
                         self.logger.error(f"Error creating values.csv copy: {e}")

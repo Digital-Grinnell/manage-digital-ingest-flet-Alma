@@ -5,6 +5,10 @@ This module contains the main MDIApplication class that manages the application
 lifecycle, routing, and UI structure.
 """
 
+import warnings
+# Suppress PyMuPDF deprecation warning with Python 3.13
+warnings.filterwarnings('ignore', message='.*builtin type SwigPyPacked has no __module__ attribute.*')
+
 import flet as ft
 import logging
 from dotenv import load_dotenv

@@ -214,6 +214,113 @@ class FileSelectorView(BaseView):
         self.page.session.set("temp_files", [])
         self.page.session.set("temp_file_info", [])
     
+    def handle_unmatched_file(self, filename, temp_dir):
+        """
+        Handle an unmatched file by creating a placeholder File-Not-Found file
+        and updating the CSV with ATTENTION! prefix.
+        
+        Args:
+            filename: The expected filename from the CSV
+            temp_dir: The temporary directory where files should be placed
+            
+        Returns:
+            str: Path to the created placeholder file, or None if failed
+        """
+        try:
+            # Determine file extension
+            _, ext = os.path.splitext(filename)
+            ext = ext.lower()
+            
+            # Map extension to source File-Not-Found asset
+            assets_dir = os.path.join(os.getcwd(), "assets")
+            
+            if ext in ['.pdf']:
+                source_file = os.path.join(assets_dir, "File-Not-Found.pdf")
+            elif ext in ['.tif', '.tiff']:
+                source_file = os.path.join(assets_dir, "File-Not-Found.tif")
+            elif ext in ['.jpg', '.jpeg']:
+                source_file = os.path.join(assets_dir, "File-Not-Found.jpg")
+            elif ext in ['.png']:
+                source_file = os.path.join(assets_dir, "File-Not-Found.png")
+            else:
+                # Default to JPG for unknown formats
+                source_file = os.path.join(assets_dir, "File-Not-Found.jpg")
+                self.logger.warning(f"Unknown extension '{ext}' for '{filename}', using .jpg placeholder")
+            
+            # Verify source file exists
+            if not os.path.exists(source_file):
+                self.logger.error(f"Source placeholder file not found: {source_file}")
+                return None
+            
+            # Create OBJS directory if it doesn't exist
+            objs_dir = os.path.join(temp_dir, "OBJS")
+            os.makedirs(objs_dir, exist_ok=True)
+            
+            # Sanitize the destination filename
+            sanitized_filename = os.path.basename(self.sanitize_file_path(filename))
+            dest_file = os.path.join(objs_dir, sanitized_filename)
+            
+            # Copy the placeholder file with the expected name
+            shutil.copy2(source_file, dest_file)
+            
+            self.logger.info(f"Created placeholder file: {sanitized_filename} (from {os.path.basename(source_file)})")
+            return dest_file
+            
+        except Exception as e:
+            self.logger.error(f"Error creating placeholder file for '{filename}': {str(e)}")
+            return None
+    
+    def update_csv_title_for_unmatched(self, csv_path, filename):
+        """
+        Update the dc:title column in the CSV to prepend "ATTENTION! " for an unmatched file.
+        
+        Args:
+            csv_path: Path to the CSV file
+            filename: The filename to search for in file_name_1 column
+            
+        Returns:
+            bool: True if update was successful, False otherwise
+        """
+        try:
+            import pandas as pd
+            
+            # Read the CSV file
+            df = pd.read_csv(csv_path, dtype=str, keep_default_na=False)
+            
+            # Find the row with this filename in file_name_1
+            if 'file_name_1' not in df.columns or 'dc:title' not in df.columns:
+                self.logger.error(f"CSV missing required columns (file_name_1 or dc:title)")
+                return False
+            
+            # Get first column name for comment checking
+            first_column = df.columns[0]
+            
+            # Find matching row (excluding comment rows)
+            mask = (df['file_name_1'] == filename) & (~df[first_column].str.startswith('#', na=False))
+            
+            if mask.any():
+                row_idx = df[mask].index[0]
+                current_title = df.at[row_idx, 'dc:title']
+                
+                # Only prepend if not already there
+                if not current_title.startswith("ATTENTION! "):
+                    df.at[row_idx, 'dc:title'] = f"ATTENTION! {current_title}"
+                    
+                    # Save the updated CSV with minimal quoting
+                    df.to_csv(csv_path, index=False, quoting=0)
+                    self.logger.info(f"Updated dc:title for '{filename}' with ATTENTION! prefix")
+                    return True
+                else:
+                    self.logger.info(f"dc:title for '{filename}' already has ATTENTION! prefix")
+                    return True
+            else:
+                self.logger.warning(f"Could not find '{filename}' in CSV file_name_1 column")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error updating CSV title for '{filename}': {str(e)}")
+            return False
+    
     def render(self) -> ft.Column:
         """
         Render the file selector view content.
@@ -1613,33 +1720,78 @@ class CSVSelectorView(FileSelectorView):
                 self.page.update()
                 return
             
-            # Create symbolic links for matched files
+            # Create symbolic links for matched files and placeholder files for unmatched
             matched_files = self.page.session.get("selected_file_paths") or []
             full_path_files = [f for f in matched_files if f and os.path.isabs(f) and os.path.exists(f)]
             
+            # Get unmatched files
+            unmatched_filenames = self.page.session.get("unmatched_filenames") or []
+            
+            # Handle matched files
             if full_path_files:
                 self.logger.info(f"Auto-workflow: Creating symbolic links for {len(full_path_files)} matched files")
                 temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(full_path_files)
+            else:
+                # No matched files, but we may still need to create temp directory for placeholders
+                temp_files = []
+                temp_file_info = []
+                temp_dir = self.page.session.get("temp_directory")
+                if not temp_dir:
+                    # Create temp directory structure
+                    temp_base_dir = os.path.join(os.getcwd(), "storage", "temp")
+                    os.makedirs(temp_base_dir, exist_ok=True)
+                    session_id = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + str(uuid.uuid4())[:8]
+                    temp_dir = os.path.join(temp_base_dir, f"file_selector_{session_id}")
+                    os.makedirs(temp_dir, exist_ok=True)
+                    self.page.session.set("temp_directory", temp_dir)
+                    self.logger.info(f"Created temporary directory for placeholders: {temp_dir}")
+            
+            # Handle unmatched files - create placeholders and update CSV
+            placeholder_count = 0
+            csv_file = self.page.session.get("temp_csv_file")
+            
+            for unmatched_info in unmatched_filenames:
+                filename = unmatched_info.get('filename', '')
+                if filename:
+                    # Create placeholder file
+                    placeholder_path = self.handle_unmatched_file(filename, temp_dir)
+                    
+                    if placeholder_path:
+                        temp_files.append(placeholder_path)
+                        placeholder_count += 1
+                        
+                        # Update CSV with ATTENTION! prefix if we have a CSV file
+                        if csv_file and os.path.exists(csv_file):
+                            self.update_csv_title_for_unmatched(csv_file, filename)
+            
+            # Update selected_file_paths to point to all temp files (matched + placeholders)
+            self.page.session.set("selected_file_paths", temp_files)
+            
+            # Close progress dialog
+            progress_dialog.open = False
+            self.page.update()
+            
+            # Show result
+            total_count = len(full_path_files) + placeholder_count
+            if total_count > 0:
+                message_parts = []
+                if len(full_path_files) > 0:
+                    message_parts.append(f"{len(full_path_files)} matched")
+                if placeholder_count > 0:
+                    message_parts.append(f"{placeholder_count} placeholder(s)")
                 
-                # Update selected_file_paths to point to temp files so derivatives are created there
-                self.page.session.set("selected_file_paths", temp_files)
+                message = f"Created {', '.join(message_parts)} file(s). "
+                if placeholder_count > 0:
+                    message += f"Check CSV for ATTENTION! markers. "
+                message += "Use Derivatives menu to generate thumbnails."
                 
-                # Close progress dialog
-                progress_dialog.open = False
-                self.page.update()
-                
-                # Show result
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"Found {len(full_path_files)} matches and created links successfully. Use the Derivatives menu to generate thumbnails and other derivatives."),
-                    bgcolor=ft.Colors.GREEN_400
+                    content=ft.Text(message),
+                    bgcolor=ft.Colors.GREEN_400 if placeholder_count == 0 else ft.Colors.ORANGE_400
                 )
             else:
-                # Close progress dialog
-                progress_dialog.open = False
-                self.page.update()
-                
                 self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("Search completed but no file matches were found"),
+                    content=ft.Text("Search completed but no files were processed"),
                     bgcolor=ft.Colors.ORANGE_400
                 )
             
