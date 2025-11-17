@@ -115,25 +115,11 @@ class SettingsView(BaseView):
         # Get theme-appropriate colors
         colors = self.get_theme_colors()
         
-        # Read data from JSON files
-        with open("_data/modes.json", "r", encoding="utf-8") as file:
-            modes_data = json.load(file)
-            mode_options = modes_data.get("options", [])
+        # File selector options for Alma (CSV is primary method)
+        file_selector_options = ["CSV", "FilePicker"]
         
-        with open("_data/azure_blobs.json", "r", encoding="utf-8") as file:
-            azure_blob_options = json.load(file)
-        
-        with open("_data/cb_collections.json", "r", encoding="utf-8") as file:
-            cb_collection_options = json.load(file)
-        
-        # File selector options (hardcoded as requested)
-        file_selector_options = ["FilePicker", "CSV"]
-        
-        # Log all available options
-        self.logger.info(f"Available mode options: {mode_options}")
+        # Log available options
         self.logger.info(f"Available file selector options: {file_selector_options}")
-        self.logger.info(f"Available storage options: {azure_blob_options}")
-        self.logger.info(f"Available collection options: {cb_collection_options}")
         
         # Load persistent settings
         persistent_settings = self.load_persistent_settings()
@@ -145,31 +131,20 @@ class SettingsView(BaseView):
         
         # Get current selections from session or fall back to persistent settings
         current_file_option = self.page.session.get("selected_file_option") or persistent_settings.get("selected_file_option")
-        current_storage = self.page.session.get("selected_storage") or persistent_settings.get("selected_storage")
         # Store in session if loaded from persistent
         if current_file_option:
             self.page.session.set("selected_file_option", current_file_option)
-        if current_storage:
-            self.page.session.set("selected_storage", current_storage)
         
         # Log current session selections if they exist
         self.logger.info(f"Current mode selection: {current_mode} (auto-set for Alma app)")
         if current_file_option:
             self.logger.info(f"Current file option selection: {current_file_option}")
-        if current_storage:
-            self.logger.info(f"Current storage selection: {current_storage}")
         
         # Dropdown change handlers
         def on_file_option_change(e):
             self.page.session.set("selected_file_option", e.control.value)
             self.save_persistent_settings({"selected_file_option": e.control.value})
             self.logger.info(f"File option selected: {e.control.value}")
-            self.log_all_current_selections()
-        
-        def on_storage_change(e):
-            self.page.session.set("selected_storage", e.control.value)
-            self.save_persistent_settings({"selected_storage": e.control.value})
-            self.logger.info(f"Storage selected: {e.control.value}")
             self.log_all_current_selections()
         
         # Theme selector handler
@@ -252,29 +227,10 @@ class SettingsView(BaseView):
             bgcolor=colors['container_bg']
         )
         
-        storage_settings_container = ft.Container(
-            content=ft.Column([
-                # ft.Text("Object Storage Selector", size=18, weight=ft.FontWeight.BOLD, color=colors['container_text']),
-                ft.Dropdown(
-                    label="Select Azure Storage",
-                    value=current_storage if current_storage else "",
-                    options=[ft.dropdown.Option(storage) for storage in azure_blob_options],
-                    on_change=on_storage_change,
-                    width=300
-                )
-            ]),
-            padding=ft.padding.all(8),
-            border=ft.border.all(1, colors['border']),
-            border_radius=10,
-            margin=ft.margin.symmetric(vertical=4),
-            bgcolor=colors['container_bg']
-        )
-        
         return ft.Column([
             *self.create_page_header("Settings Page", include_log_button=False),
             mode_settings_container,
             file_selector_settings_container,
-            storage_settings_container,
             ft.Divider(height=15, color=colors['divider']),
             theme_settings_container,
             ft.Divider(height=15, color=colors['divider']),
@@ -302,7 +258,6 @@ class SettingsView(BaseView):
         """Log all current selections in one summary"""
         selections = {
             "mode": self.page.session.get("selected_mode"),
-            "file_option": self.page.session.get("selected_file_option"),
-            "storage": self.page.session.get("selected_storage")
+            "file_option": self.page.session.get("selected_file_option")
         }
         self.logger.info(f"Current selections summary: {selections}")

@@ -2,6 +2,8 @@
 
 A Flet-based Python application for managing Grinnell College ingest of digital objects to Alma Digital.
 
+> **📖 New to this application?** Start with the [USER-GUIDE.md](USER-GUIDE.md) for comprehensive workflow instructions and troubleshooting.
+
 ## 🚀 Quick Start
 
 ### Running the Application
@@ -72,13 +74,19 @@ The app automatically sets the mode to "Alma" - no mode selection needed. Config
 
 ## 📚 Documentation
 
-- **Alma Compound Handling**: See `ALMA-COMPOUND-HANDLING.md` for details on parent/child object processing
-- **Development History**: See `HISTORY.md` for feature development timeline
+### Comprehensive Guides
+
+- **[USER-GUIDE.md](USER-GUIDE.md)** - Complete user guide with step-by-step Alma workflow, troubleshooting, and best practices
+- **[ALMA-COMPOUND-HANDLING.md](ALMA-COMPOUND-HANDLING.md)** - Detailed documentation on parent/child compound object processing
+- **[DEPLOYMENT-SETUP.md](DEPLOYMENT-SETUP.md)** - Installation, deployment, configuration, and maintenance guide
+- **[DEVELOPMENT-HISTORY.md](DEVELOPMENT-HISTORY.md)** - Feature development timeline and technical architecture
+
+### Quick Reference
+
+- `_data/verified_CSV_headings_for_Alma-D.csv` - Valid CSV column headings
+- `_data/alma_aws_s3.md` - AWS S3 upload instructions
+- `mdi.log` - Application log file (auto-generated)
 
 ## 🏢 About
 
 Developed for Grinnell College Libraries to streamline the digital object ingest process for Alma Digital.
-
-## 🔗 Related
-
-For CollectionBuilder workflows, see the separate **Manage Digital Ingest: CollectionBuilder Edition** application.

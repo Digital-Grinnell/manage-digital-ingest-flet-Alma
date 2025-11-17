@@ -28,7 +28,7 @@ class DerivativesView(BaseView):
         
         Args:
             file_path: Path to the source file
-            mode: Mode to use ('Alma' or 'CollectionBuilder')
+            mode: Mode to use - always 'Alma' for this application
             derivative_type: Type of derivative ('thumbnail' or 'small')
             
         Returns:
@@ -95,63 +95,8 @@ class DerivativesView(BaseView):
                     error_msg = f"Unsupported file type for Alma: {ext}"
                     self.logger.error(error_msg)
                     return False, error_msg
-            
-            elif mode == 'CollectionBuilder':
-                # CollectionBuilder mode - create thumbnail or small in respective directories
-                if derivative_type == 'thumbnail':
-                    tn_dir = os.path.join(temp_base_dir, 'TN')
-                    os.makedirs(tn_dir, exist_ok=True)
-                    derivative_path = os.path.join(tn_dir, f"{root}_TN.jpg")
-                    self.logger.info(f"CollectionBuilder thumbnail path: {derivative_path}")
-                    options = {
-                        'trim': False,
-                        'height': 400,
-                        'width': 400,
-                        'quality': 85,
-                        'type': 'thumbnail'
-                    }
-                elif derivative_type == 'small':
-                    small_dir = os.path.join(temp_base_dir, 'SMALL')
-                    os.makedirs(small_dir, exist_ok=True)
-                    derivative_path = os.path.join(small_dir, f"{root}_SMALL.jpg")
-                    self.logger.info(f"CollectionBuilder small path: {derivative_path}")
-                    options = {
-                        'trim': False,
-                        'height': 800,
-                        'width': 800,
-                        'quality': 85,
-                        'type': 'thumbnail'
-                    }
-                else:
-                    error_msg = f"Unknown derivative type for CollectionBuilder: {derivative_type}"
-                    self.logger.error(error_msg)
-                    return False, error_msg
-                
-                # Process based on file type
-                if ext.lower() in ['.tiff', '.tif', '.jpg', '.jpeg', '.png', '.gif', '.bmp']:
-                    success = generate_thumbnail(file_path, derivative_path, options)
-                    if success:
-                        self.logger.info(f"Created CollectionBuilder {derivative_type}: {derivative_path}")
-                        return True, derivative_path
-                    else:
-                        error_msg = f"Failed to create CollectionBuilder {derivative_type}: {derivative_path}"
-                        self.logger.error(error_msg)
-                        return False, error_msg
-                elif ext.lower() == '.pdf':
-                    success = generate_pdf_thumbnail(file_path, derivative_path, options)
-                    if success:
-                        self.logger.info(f"Created CollectionBuilder {derivative_type} from PDF: {derivative_path}")
-                        return True, derivative_path
-                    else:
-                        error_msg = f"Failed to create PDF {derivative_type}: {derivative_path}"
-                        self.logger.error(error_msg)
-                        return False, error_msg
-                else:
-                    error_msg = f"Unsupported file type for CollectionBuilder: {ext}"
-                    self.logger.error(error_msg)
-                    return False, error_msg
             else:
-                error_msg = f"Unsupported mode: {mode}"
+                error_msg = f"Unsupported mode: {mode} (only 'Alma' supported)"
                 self.logger.error(error_msg)
                 return False, error_msg
                 
@@ -385,7 +330,7 @@ class DerivativesView(BaseView):
         status_info_controls.extend([
             ft.Container(height=5),
             ft.Text("Derivative Types:", size=14, weight=ft.FontWeight.BOLD, color=colors['container_text']),
-            ft.Text("• CollectionBuilder: _TN.jpg (400x400) + _SMALL.jpg (800x800)", 
+            ft.Text("• Alma: .clientThumb (200x200, preserves extension)", 
                    size=12, color=colors['container_text']),
             ft.Text("• Alma: _TN.jpg (200x200) thumbnail", 
                    size=12, color=colors['container_text'])

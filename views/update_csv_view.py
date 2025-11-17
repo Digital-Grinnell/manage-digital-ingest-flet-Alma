@@ -286,55 +286,9 @@ class UpdateCSVView(BaseView):
                         row_idx = self.csv_data[mask].index[0]
                         self.logger.info(f"Found match at row index: {row_idx}")
                         
-                        if current_mode == "CollectionBuilder":
-                            # In CollectionBuilder mode, populate Azure blob URLs
-                            azure_base_url = "https://collectionbuilder.blob.core.windows.net"
-                            selected_collection = self.page.session.get("selected_collection") or ""
-                            
-                            self.logger.info(f"CollectionBuilder mode - selected_collection: '{selected_collection}'")
-                            
-                            # Build derivative filenames for smalls and thumbs
-                            # Remove extension from sanitized_filename and add _SMALL.jpg and _TN.jpg
-                            base_name = os.path.splitext(sanitized_filename)[0]
-                            small_filename = f"{base_name}_SMALL.jpg"
-                            thumb_filename = f"{base_name}_TN.jpg"
-                            
-                            # Build blob URLs with collection prefix
-                            if selected_collection:
-                                obj_url = f"{azure_base_url}/objs/{selected_collection}/{sanitized_filename}"
-                                small_url = f"{azure_base_url}/smalls/{selected_collection}/{small_filename}"
-                                thumb_url = f"{azure_base_url}/thumbs/{selected_collection}/{thumb_filename}"
-                            else:
-                                obj_url = f"{azure_base_url}/objs/{sanitized_filename}"
-                                small_url = f"{azure_base_url}/smalls/{small_filename}"
-                                thumb_url = f"{azure_base_url}/thumbs/{thumb_filename}"
-                            
-                            self.logger.info(f"Generated URLs - obj: {obj_url}, small: {small_url}, thumb: {thumb_url}")
-                            
-                            # Update the three URL columns
-                            if 'object_location' in self.csv_data.columns:
-                                self.csv_data.at[row_idx, 'object_location'] = obj_url
-                                self.logger.info(f"Set object_location at row {row_idx}")
-                            else:
-                                self.logger.warning("object_location column not found in CSV!")
-                                
-                            if 'image_small' in self.csv_data.columns:
-                                self.csv_data.at[row_idx, 'image_small'] = small_url
-                                self.logger.info(f"Set image_small at row {row_idx}")
-                            else:
-                                self.logger.warning("image_small column not found in CSV!")
-                                
-                            if 'image_thumb' in self.csv_data.columns:
-                                self.csv_data.at[row_idx, 'image_thumb'] = thumb_url
-                                self.logger.info(f"Set image_thumb at row {row_idx}")
-                            else:
-                                self.logger.warning("image_thumb column not found in CSV!")
-                            
-                            self.logger.info(f"Updated CollectionBuilder URLs for: '{csv_filename}'")
-                        else:
-                            # In Alma mode, just replace with sanitized filename
-                            self.csv_data.at[row_idx, column_name] = sanitized_filename
-                            self.logger.info(f"Updated CSV: '{csv_filename}' -> '{sanitized_filename}'")
+                        # In Alma mode, replace with sanitized filename
+                        self.csv_data.at[row_idx, column_name] = sanitized_filename
+                        self.logger.info(f"Updated CSV: '{csv_filename}' -> '{sanitized_filename}'")
                         
                         updates += 1
                     else:
@@ -535,95 +489,30 @@ class UpdateCSVView(BaseView):
                 else:
                     self.logger.info("No compound parent/child relationships found")
             
-            # Step 3.7: Handle parent/child relationships (CollectionBuilder mode only)
-            # Copy image_small and image_thumb from first child to parent
-            if current_mode == "CollectionBuilder":
-                parent_child_updates = 0
-                
-                # Check if required columns exist
-                if 'objectid' in self.csv_data.columns and 'parentid' in self.csv_data.columns:
-                    self.logger.info("Processing parent/child relationships...")
-                    
-                    # Get first column name for comment checking
-                    first_column = self.csv_data.columns[0]
-                    
-                    # Find all parent records (rows where parentid is empty/NaN and not comment rows)
-                    parents_mask = ((self.csv_data['parentid'].isna() | (self.csv_data['parentid'] == '')) & 
-                                   (~self.csv_data[first_column].str.startswith('#', na=False)))
-                    parent_indices = self.csv_data[parents_mask].index
-                    
-                    for parent_idx in parent_indices:
-                        parent_objectid = self.csv_data.at[parent_idx, 'objectid']
-                        
-                        if pd.isna(parent_objectid) or str(parent_objectid).strip() == '':
-                            continue
-                            
-                        # Find children (rows where parentid matches this parent's objectid and not comment rows)
-                        children_mask = ((self.csv_data['parentid'] == parent_objectid) & 
-                                        (~self.csv_data[first_column].str.startswith('#', na=False)))
-                        children_indices = self.csv_data[children_mask].index
-                        
-                        if len(children_indices) > 0:
-                            # Get the first child
-                            first_child_idx = children_indices[0]
-                            
-                            # Copy image_small and image_thumb from first child to parent
-                            updates_made = False
-                            
-                            if 'image_small' in self.csv_data.columns:
-                                child_small = self.csv_data.at[first_child_idx, 'image_small']
-                                if not pd.isna(child_small) and str(child_small).strip() != '':
-                                    self.csv_data.at[parent_idx, 'image_small'] = child_small
-                                    updates_made = True
-                                    self.logger.info(f"Copied image_small from child to parent (objectid={parent_objectid})")
-                            
-                            if 'image_thumb' in self.csv_data.columns:
-                                child_thumb = self.csv_data.at[first_child_idx, 'image_thumb']
-                                if not pd.isna(child_thumb) and str(child_thumb).strip() != '':
-                                    self.csv_data.at[parent_idx, 'image_thumb'] = child_thumb
-                                    updates_made = True
-                                    self.logger.info(f"Copied image_thumb from child to parent (objectid={parent_objectid})")
-                            
-                            if updates_made:
-                                parent_child_updates += 1
-                    
-                    if parent_child_updates > 0:
-                        self.logger.info(f"Updated {parent_child_updates} parent record(s) with child derivative URLs")
-                    else:
-                        self.logger.info("No parent/child updates needed")
-                else:
-                    if 'objectid' not in self.csv_data.columns:
-                        self.logger.warning("objectid column not found in CSV - skipping parent/child processing")
-                    if 'parentid' not in self.csv_data.columns:
-                        self.logger.warning("parentid column not found in CSV - skipping parent/child processing")
+            # Step 3.7: CollectionBuilder parent/child logic removed (Alma-only app)
             
-            # Step 4: Populate dginfo field for ALL rows with temp CSV filename (Alma mode only)
-            if current_mode == "Alma":
-                if 'dginfo' in self.csv_data.columns:
-                    self.csv_data['dginfo'] = temp_csv_filename
-                    # Also update original so dginfo doesn't show as changed
-                    self.csv_data_original['dginfo'] = temp_csv_filename
-                    self.logger.info(f"Set dginfo field to '{temp_csv_filename}' for all {len(self.csv_data)} rows")
-                else:
-                    self.logger.warning("dginfo column not found in CSV")
+            # Step 4: Populate dginfo field for ALL rows with temp CSV filename
+            if 'dginfo' in self.csv_data.columns:
+                self.csv_data['dginfo'] = temp_csv_filename
+                # Also update original so dginfo doesn't show as changed
+                self.csv_data_original['dginfo'] = temp_csv_filename
+                self.logger.info(f"Set dginfo field to '{temp_csv_filename}' for all {len(self.csv_data)} rows")
+            else:
+                self.logger.warning("dginfo column not found in CSV")
             
             # Save the updated CSV (keeps comment rows)
             self.save_csv_data()
             self.edits_applied = True
             
-            # Step 5: In Alma mode, create values.csv with comment rows removed
-            if current_mode == "Alma":
-                temp_dir = self.page.session.get("temp_directory")
-                if temp_dir:
-                    try:
-                        values_csv_path = os.path.join(temp_dir, "values.csv")
-                        self.save_values_csv(values_csv_path)
-                        self.logger.info(f"Created values.csv in temp directory: {values_csv_path}")
-                    except Exception as e:
-                        self.logger.error(f"Error creating values.csv: {e}")
-                        self.logger.info(f"Created values.csv copy in temp directory: {values_csv_path}")
-                    except Exception as e:
-                        self.logger.error(f"Error creating values.csv copy: {e}")
+            # Step 5: Create values.csv with comment rows removed
+            temp_dir = self.page.session.get("temp_directory")
+            if temp_dir:
+                try:
+                    values_csv_path = os.path.join(temp_dir, "values.csv")
+                    self.save_values_csv(values_csv_path)
+                    self.logger.info(f"Created values.csv in temp directory: {values_csv_path}")
+                except Exception as e:
+                    self.logger.error(f"Error creating values.csv: {e}")
             
             # Update the data table display
             if self.data_table:
@@ -1019,17 +908,9 @@ class UpdateCSVView(BaseView):
                 if not self.load_csv_data(self.temp_csv_path):
                     self.logger.error("Failed to load CSV file")
         
-        # Get current mode to determine column name for updates
-        current_mode = utils.session_get(self.page, "selected_mode", "Alma")
-        
-        # Set the column to update based on mode (no selector needed)
-        if current_mode == "Alma":
-            self.selected_column = "file_name_1"
-            button_text = "Apply Matched Files to file_name_1"
-        else:  # CollectionBuilder
-            # In CollectionBuilder, use the column selected by the user in File Selector
-            self.selected_column = self.page.session.get("selected_csv_column") or "filename"
-            button_text = f"Apply Matched Files to CollectionBuilder URLs"
+        # Alma mode - always use file_name_1 column
+        self.selected_column = "file_name_1"
+        button_text = "Apply Matched Files to file_name_1"
         
         # Build the UI - Status information controls
         status_info_controls = []
