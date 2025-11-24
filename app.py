@@ -155,10 +155,10 @@ class MDIApplication:
             center_title=False,
             bgcolor=ft.Colors.BLUE_GREY_100,
             actions=[
-                ft.IconButton(ft.Icons.HOME, tooltip="Home", on_click=nav_home),
-                ft.IconButton(ft.Icons.SETTINGS, tooltip="Manage Settings", on_click=nav_settings),
-                ft.IconButton(ft.Icons.INFO, tooltip="About", on_click=nav_about),
-                ft.IconButton(ft.Icons.LIST_ALT, tooltip="Display Application Log", on_click=nav_show_logs),
+                ft.IconButton(ft.Icons.HOME, tooltip="🏠 Home", on_click=nav_home),
+                ft.IconButton(ft.Icons.SETTINGS, tooltip="⚙️ Settings", on_click=nav_settings),
+                ft.IconButton(ft.Icons.INFO, tooltip="ℹ️ About", on_click=nav_about),
+                ft.IconButton(ft.Icons.LIST_ALT, tooltip="📋 Display Application Log", on_click=nav_show_logs),
                 # Vertical separator between Application Log and File Selector icons
                 ft.Container(
                     width=2,
@@ -166,11 +166,11 @@ class MDIApplication:
                     bgcolor=ft.Colors.GREY_400,
                     margin=ft.margin.symmetric(horizontal=4)
                 ),
-                ft.IconButton(ft.Icons.FILE_OPEN, tooltip="File Selector", on_click=nav_file_selector),
-                ft.IconButton(ft.Icons.AUTO_FIX_HIGH, tooltip="Create Derivatives", on_click=nav_create_derivatives),
-                ft.IconButton(ft.Icons.GRID_ON, tooltip="CSV Generator", on_click=nav_csv_generator),
-                ft.IconButton(ft.Icons.TABLE_CHART, tooltip="Update CSV", on_click=nav_update_csv),
-                ft.IconButton(ft.Icons.INTEGRATION_INSTRUCTIONS_ROUNDED, tooltip="Show Final Instructions", on_click=nav_show_instructions),
+                ft.IconButton(ft.Icons.FILE_OPEN, tooltip="📂 File Selector", on_click=nav_file_selector),
+                ft.IconButton(ft.Icons.AUTO_FIX_HIGH, tooltip="✨ Create Derivatives", on_click=nav_create_derivatives),
+                ft.IconButton(ft.Icons.GRID_ON, tooltip="📊 CSV Generator", on_click=nav_csv_generator),
+                ft.IconButton(ft.Icons.TABLE_CHART, tooltip="📋 Update CSV", on_click=nav_update_csv),
+                ft.IconButton(ft.Icons.INTEGRATION_INSTRUCTIONS_ROUNDED, tooltip="📖 Final Instructions", on_click=nav_show_instructions),
                 # Vertical separator before the Exit icon
                 ft.Container(
                     width=2,
@@ -178,7 +178,7 @@ class MDIApplication:
                     bgcolor=ft.Colors.GREY_400,
                     margin=ft.margin.symmetric(horizontal=4)
                 ),
-                ft.IconButton(ft.Icons.EXIT_TO_APP, tooltip="Exit", on_click=nav_exit),
+                ft.IconButton(ft.Icons.EXIT_TO_APP, tooltip="🚪 Exit", on_click=nav_exit),
             ],
         )
     
@@ -219,13 +219,13 @@ class MDIApplication:
         page.title = "Manage Digital Ingest: Alma Edition"
         
         # Load persistent settings from persistent storage
-        window_height = 700  # Default value
+        window_height = 800  # Default value
         theme_mode = "Light"  # Default theme
         persistent_data = {}
         try:
             with open("_data/persistent.json", "r", encoding="utf-8") as f:
                 persistent_data = utils.json.load(f)
-                window_height = persistent_data.get("window-height", 700)
+                window_height = persistent_data.get("window-height", 800)
                 theme_mode = persistent_data.get("selected_theme", "Light")
         except Exception as e:
             self.logger.warning(f"Failed to load persistent settings from persistent.json: {e}")
@@ -252,8 +252,13 @@ class MDIApplication:
             self.logger.info("Restored preserved session data")
         
         # Set window dimensions
+        page.window.width = 1000
         page.window.height = window_height
         page.window.min_height = 500
+        page.window.resizable = True
+        page.update()
+        
+        self.logger.info(f"Window dimensions set to width=1000, height={window_height}")
         
         # Set theme mode from persistent settings
         if theme_mode == "Dark":

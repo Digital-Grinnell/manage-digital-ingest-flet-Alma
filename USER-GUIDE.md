@@ -83,9 +83,19 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
 4. Optionally adjust theme and window height
 5. Settings are automatically saved
 
-### Step 3: File Selector - Load CSV and Images
+### Step 3: File Selector - Choose Files
 
-#### 3.1 Select CSV File
+#### Method 1: Direct File Selection (FilePicker)
+1. Navigate to **File Selector** page
+2. Click **"Select Files"** to open system file picker
+3. Select all files you want to process
+4. Files are automatically copied to temporary directory with symbolic links
+5. Temp directory structure: `storage/temp/file_selector_YYYYMMDD_HHMMSS_UUID/OBJS/`
+6. Status display shows temporary file count
+
+#### Method 2: CSV-Based Selection with Fuzzy Matching
+
+##### 3.1 Select CSV File
 1. Navigate to **File Selector** page
 2. Click **"Select CSV File"** and choose your metadata CSV
    - CSV must have verified headings for Alma mode
@@ -94,15 +104,16 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
 3. Review the CSV validation status
 4. CSV is loaded and displayed in the table
 
-#### 3.2 Browse for Image Files
+##### 3.2 Browse for Image Files
 1. Click **"Browse for Image Files"**
 2. Select all image files that correspond to CSV entries
 3. Multiple files can be selected at once
 4. File count is displayed
 
-#### 3.3 Run Fuzzy Search
+##### 3.3 Run Fuzzy Search
 1. Click **"Run Fuzzy Search"**
    - Application matches image filenames to CSV metadata using sequence-based similarity
+   - 10-point penalty applied for numeric-only differences (e.g., file_52.pdf vs file_25.pdf)
    - Each CSV entry is matched to the best available file
    - Exhaustive search ensures true best match is found
 2. Review matched files and their similarity scores
@@ -111,13 +122,13 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
    - Lower threshold (70-80%) for more lenient matching
    - Higher threshold (95-100%) for stricter matching
 
-#### 3.4 Handle Unmatched Files
+##### 3.4 Handle Unmatched Files
 - Files not matching any CSV entry are noted
 - Placeholder files (400x400 pixels) are created for missing files
 - CSV is updated with "ATTENTION! file-not-found" markers
 - Review log for details on unmatched/missing files
 
-#### 3.5 Copy Matched Files to Temp
+##### 3.5 Copy Matched Files to Temp
 1. Click **"Copy Matched Files to Temp"**
    - Creates temporary directory structure
    - Copies images with sanitized filenames
@@ -125,6 +136,26 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
    - Original CSV is copied to temp directory with timestamp
 2. Review copy status and file count
 3. Temp directory path is displayed and saved to session
+
+### Step 3a: CSV Generator (Optional) - Create Initial Metadata
+
+If you don't have a CSV file yet, you can generate one from your selected files:
+
+1. Navigate to **CSV Generator** page
+2. Verify selected files count is shown
+3. Click **"Generate CSV Rows"**
+   - Creates one CSV row per selected file
+   - Populates `file_name_1` with filename
+   - Populates `dc:title` with filename (without extension)
+   - All other fields remain blank for manual editing
+   - Uses Alma-D CSV structure (66+ columns)
+4. Review generated data in the table view
+5. Click **"Export to CSV File"**
+   - Choose destination directory
+   - CSV file is saved with timestamp: `generated_metadata_YYYYMMDD_HHMMSS.csv`
+6. Edit the exported CSV to add metadata before proceeding with workflow
+
+**Note**: Generated CSV rows are stored in session storage and cleared when app restarts.
 
 ### Step 4: Derivatives - Generate Thumbnails
 
@@ -293,10 +324,20 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
 ### File Selector
 - **CSV Selection**: Choose and validate CSV metadata file
 - **File Browsing**: Select image files to match with CSV
-- **Fuzzy Search**: Automatic filename matching with configurable threshold
+- **Fuzzy Search**: Automatic filename matching with configurable threshold and numeric-only difference penalty
 - **Temp Copy**: Create working directory with sanitized filenames
 - **Status Display**: Shows validation, match results, file counts
 - **Comment Filtering**: Rows starting with # are automatically excluded from processing
+- **Direct File Selection**: Use FilePicker to select files without CSV (creates symbolic links)
+
+### CSV Generator
+- **Generate Metadata**: Create initial CSV rows from selected files
+- **Alma-D Structure**: Uses verified 66+ column Alma Digital CSV format
+- **Auto-populate**: Fills `file_name_1` and `dc:title` fields automatically
+- **Preview Table**: View generated data before export
+- **Export to CSV**: Save generated metadata to any directory
+- **Session Storage**: Temporarily stores generated rows (cleared on app restart)
+- **Timestamp Filenames**: Exported files include timestamp for version tracking
 
 ### Derivatives
 - **TN Generation**: Create thumbnail images (200px max)

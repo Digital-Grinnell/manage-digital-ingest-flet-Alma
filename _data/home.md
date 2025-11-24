@@ -4,14 +4,14 @@
   
 ## Features of this Alma app include:  
   
-  - **Alma workflow only** - app is pre-configured for Alma Digital ingest,  
-  - object file selection via...  
+  - **⚙️ Settings** - app is pre-configured for Alma Digital ingest,  
+  - **📂 File Selector** - object file selection via...  
     - a system file picker pop-up, or  
     - ability to read a list of digital object filenames from a `CSV` file,  
-      - coupled with a "fuzzy" network file search utility, and
+      - coupled with a "fuzzy" network file search utility with numeric-only difference penalty, and
       - automatic update of the `CSV` with unique IDs, collection IDs, compound object handling, and revised file names/paths,
-  - Alma derivative creation utility (200x200 thumbnails with .clientThumb extension),
-  - AWS S3 upload script generator for Alma Digital ingest,   
-  - compound object (parent/child) relationship management with automatic TOC generation, and
-  - follow-up instructions/scripts generator to assist in Alma ingest operations.
+  - **📊 CSV Generator** - create initial CSV rows from selected files using Alma-D structure,
+  - **✨ Create Derivatives** - Alma derivative creation utility (200x200 thumbnails with .clientThumb extension),
+  - **📋 Update CSV** - metadata update utility with compound object (parent/child) relationship management and automatic TOC generation,
+  - **📖 Final Instructions** - AWS S3 upload script generator for Alma Digital ingest and follow-up instructions to assist in Alma ingest operations.
 
