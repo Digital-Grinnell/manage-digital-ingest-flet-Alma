@@ -1,10 +1,12 @@
 """
-Storage view for Azure storage operations.
+CSV Generator view for creating CSV rows from selected files.
 """
 import os
 import json
+import csv
 import flet as ft
-from azure.storage.blob import BlobServiceClient
+import pandas as pd
+from datetime import datetime
 
 import utils
 from .base_view import BaseView
@@ -13,489 +15,351 @@ from .base_view import BaseView
 class StorageView(BaseView):
     
     def __init__(self, page: ft.Page):
-        """Initialize the storage view."""
+        """Initialize the CSV generator view."""
         super().__init__(page)
-        self.upload_progress = ft.ProgressBar(width=400, visible=False)
-        self.upload_status = ft.Text("", visible=False)
+        self.csv_data_table = None
+        self.generated_csv_data = []
+        self.generated_rows_text = None
+        self.export_button = None
+        self.clear_button = None
     
-    def get_azure_base_url(self):
-        """Get the Azure base URL from persistent settings or use mode-specific default."""
+    def load_csv_headings(self):
+        """Load CSV headings from verified headings file."""
         try:
-            # Check the current mode
-            current_mode = self.page.session.get("selected_mode")
-            
-            # If in CollectionBuilder mode, use the CollectionBuilder Azure URL
-            if current_mode == "CollectionBuilder":
-                return "https://collectionbuilder.blob.core.windows.net"
-            
-            # Otherwise, get from persistent settings
-            with open("_data/persistent.json", "r", encoding="utf-8") as f:
-                persistent_data = json.load(f)
-            return persistent_data.get("azure_base_url", "")
+            headings_file = "_data/verified_CSV_headings_for_Alma-D.csv"
+            with open(headings_file, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                headings = next(reader)
+                self.logger.info(f"Loaded {len(headings)} CSV headings from {headings_file}")
+                return headings
         except Exception as e:
-            self.logger.error(f"Failed to read Azure base URL: {e}")
-            return ""
+            self.logger.error(f"Failed to load CSV headings: {e}")
+            return []
     
-    def generate_upload_script(self, e):
-        """Generate Alma S3 upload script and display it with copy buttons."""
+    def generate_csv_rows(self, e):
+        """Generate CSV rows from selected file paths."""
+        # Get selected file paths from session
+        file_paths = self.page.session.get("selected_file_paths") or []
+        
+        if not file_paths:
+            self.show_snack("No files selected. Please use File Selector first.", is_error=True)
+            return
+        
+        # Load CSV headings
+        headings = self.load_csv_headings()
+        if not headings:
+            self.show_snack("Failed to load CSV headings", is_error=True)
+            return
+        
+        # Generate rows
+        self.generated_csv_data = []
+        
+        for file_path in file_paths:
+            # Create a row dictionary with all headings as keys
+            row = {heading: "" for heading in headings}
+            
+            # Populate basic fields from filename
+            filename = os.path.basename(file_path)
+            name_without_ext = os.path.splitext(filename)[0]
+            
+            # Set file_name_1 to the filename
+            if 'file_name_1' in row:
+                row['file_name_1'] = filename
+            
+            # Set dc:title to filename without extension
+            if 'dc:title' in row:
+                row['dc:title'] = name_without_ext
+            
+            # Add to generated data
+            self.generated_csv_data.append(row)
+        
+        self.logger.info(f"Generated {len(self.generated_csv_data)} CSV rows")
+        
+        # Save to persistent.json
+        self.save_generated_csv()
+        
+        # Update display
+        self.display_csv_data()
+        
+        # Update the generated rows count
+        if self.generated_rows_text:
+            self.generated_rows_text.value = f"Generated Rows: {len(self.generated_csv_data)}"
+        
+        # Enable export and clear buttons
+        if self.export_button:
+            self.export_button.disabled = False
+        if self.clear_button:
+            self.clear_button.disabled = False
+        
+        self.page.update()
+        
+        self.show_snack(f"Generated {len(self.generated_csv_data)} CSV rows")
+    
+    def save_generated_csv(self):
+        """Save generated CSV data to session storage."""
         try:
-            # Get the temp directory from session
-            temp_dir = self.page.session.get("temp_directory")
-            if not temp_dir:
-                self.show_snack("No temporary directory found. Please select files first.", is_error=True)
-                return
+            # Save to session storage
+            self.page.session.set("generated_csv_rows", self.generated_csv_data)
+            self.logger.info(f"Saved {len(self.generated_csv_data)} rows to session storage")
+        except Exception as e:
+            self.logger.error(f"Failed to save generated CSV data: {e}")
+    
+    def load_generated_csv(self):
+        """Load generated CSV data from session storage."""
+        try:
+            # Load from session storage
+            session_data = self.page.session.get("generated_csv_rows")
+            if session_data:
+                self.generated_csv_data = session_data
+                self.logger.info(f"Loaded {len(self.generated_csv_data)} rows from session storage")
+            else:
+                self.generated_csv_data = []
+        except Exception as e:
+            self.logger.error(f"Failed to load generated CSV data: {e}")
+            self.generated_csv_data = []
+    
+    def display_csv_data(self):
+        """Display the generated CSV data in a table."""
+        if not self.generated_csv_data:
+            if self.csv_data_table:
+                self.csv_data_table.rows = []
+                self.page.update()
+            return
+        
+        # Convert to DataFrame for easier display
+        df = pd.DataFrame(self.generated_csv_data)
+        
+        # Get only non-empty columns for display
+        non_empty_cols = [col for col in df.columns if df[col].notna().any() and (df[col] != '').any()]
+        
+        if not non_empty_cols:
+            # Show at least the first few columns if all are empty
+            non_empty_cols = df.columns[:5].tolist()
+        
+        # Create table
+        colors = self.get_theme_colors()
+        
+        # Create columns for DataTable
+        columns = [ft.DataColumn(ft.Text(col, size=12, weight=ft.FontWeight.BOLD)) 
+                  for col in non_empty_cols]
+        
+        # Create rows for DataTable
+        rows = []
+        for idx, row in df.iterrows():
+            cells = []
+            for col in non_empty_cols:
+                value = str(row[col]) if pd.notna(row[col]) and row[col] != '' else ''
+                cells.append(ft.DataCell(ft.Text(value, size=11)))
+            rows.append(ft.DataRow(cells=cells))
+        
+        # Update the data table
+        if self.csv_data_table:
+            self.csv_data_table.columns = columns
+            self.csv_data_table.rows = rows
+            self.page.update()
+    
+    def on_save_directory_result(self, e: ft.FilePickerResultEvent):
+        """Handle the directory picker result for saving CSV."""
+        if e.path:
+            save_dir = e.path
             
-            # Get the temp CSV filename from session
-            temp_csv_filename = self.page.session.get("temp_csv_filename")
-            
-            # Generate the script
-            script_content = utils.generate_alma_s3_script(temp_dir, temp_csv_filename)
-            
-            # Save script to temp directory
-            script_path = os.path.join(temp_dir, "upload_to_alma.sh")
             try:
-                with open(script_path, "w") as f:
-                    f.write(script_content)
-                os.chmod(script_path, 0o755)  # Make executable
-                self.logger.info(f"Generated upload script: {script_path}")
+                # Create CSV filename
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                csv_filename = f"generated_metadata_{timestamp}.csv"
+                csv_path = os.path.join(save_dir, csv_filename)
+                
+                # Write to CSV
+                df = pd.DataFrame(self.generated_csv_data)
+                df.to_csv(csv_path, index=False, encoding='utf-8', quoting=0)
+                
+                self.logger.info(f"Exported CSV to: {csv_path}")
+                self.show_snack(f"Exported to: {csv_filename}")
+                
             except Exception as ex:
-                self.logger.error(f"Failed to save script: {ex}")
-                self.show_snack(f"Failed to save script: {ex}", is_error=True)
-                return
-            
-            # Parse script into commands (lines starting with 'aws')
-            lines = script_content.split('\n')
-            commands = []
-            for line in lines:
-                stripped = line.strip()
-                if stripped.startswith('aws '):
-                    commands.append(stripped)
-            
-            # Create display with copy buttons
-            colors = self.get_theme_colors()
-            
-            command_controls = []
-            for idx, cmd in enumerate(commands, 1):
-                command_controls.append(
-                    ft.Container(
-                        content=ft.Row([
-                            ft.Container(
-                                content=ft.Text(
-                                    cmd,
-                                    size=11,
-                                    font_family="Courier New",
-                                    color=colors['code_text'],
-                                    selectable=True
-                                ),
-                                expand=True,
-                                padding=10,
-                                bgcolor=colors['markdown_bg'],
-                                border_radius=4,
-                            ),
-                            ft.IconButton(
-                                icon=ft.Icons.COPY,
-                                tooltip=f"Copy command {idx}",
-                                on_click=lambda e, command=cmd: self.copy_to_clipboard(e, command)
-                            )
-                        ], spacing=5),
-                        margin=ft.margin.only(bottom=10)
-                    )
-                )
-            
-            # Create dialog to show the script
-            dialog = ft.AlertDialog(
-                title=ft.Text("Alma S3 Upload Script Generated", weight=ft.FontWeight.BOLD),
-                content=ft.Container(
+                self.logger.error(f"Failed to export CSV: {ex}")
+                self.show_snack(f"Export failed: {ex}", is_error=True)
+        else:
+            self.logger.info("CSV export cancelled - no directory selected")
+    
+    def export_to_csv(self, e):
+        """Export generated CSV data to a file."""
+        if not self.generated_csv_data:
+            self.show_snack("No CSV data to export", is_error=True)
+            return
+        
+        # Create and show directory picker
+        save_dir_picker = ft.FilePicker(on_result=self.on_save_directory_result)
+        self.page.overlay.append(save_dir_picker)
+        self.page.update()
+        
+        # Open directory picker
+        save_dir_picker.get_directory_path(dialog_title="Select Directory to Save CSV")
+    
+    def clear_csv_data(self, e):
+        """Clear the generated CSV data."""
+        self.generated_csv_data = []
+        self.page.session.set("generated_csv_rows", [])
+        self.display_csv_data()
+        
+        # Update the generated rows count
+        if self.generated_rows_text:
+            self.generated_rows_text.value = f"Generated Rows: 0"
+        
+        # Disable export and clear buttons
+        if self.export_button:
+            self.export_button.disabled = True
+        if self.clear_button:
+            self.clear_button.disabled = True
+        
+        self.page.update()
+        self.show_snack("Cleared CSV data")
+        self.logger.info("Cleared generated CSV data from session storage")
+    
+    def render(self) -> ft.Column:
+        """
+        Render the CSV generator view.
+        
+        Returns:
+            ft.Column: The CSV generator page layout
+        """
+        self.on_view_enter()
+        
+        # Load any existing generated data
+        self.load_generated_csv()
+        
+        # Get theme-appropriate colors
+        colors = self.get_theme_colors()
+        
+        # Get file count from session
+        file_paths = self.page.session.get("selected_file_paths") or []
+        file_count = len(file_paths)
+        
+        # Create data table
+        self.csv_data_table = ft.DataTable(
+            columns=[ft.DataColumn(ft.Text("No Data", size=12))],
+            rows=[],
+            border=ft.border.all(1, colors['border']),
+            border_radius=5,
+            vertical_lines=ft.BorderSide(1, colors['border']),
+            horizontal_lines=ft.BorderSide(1, colors['border']),
+            heading_row_color=colors['container_bg'],
+            heading_row_height=40,
+            data_row_min_height=35,
+            data_row_max_height=35,
+            column_spacing=10,
+        )
+        
+        # Display existing data if available
+        if self.generated_csv_data:
+            self.display_csv_data()
+        
+        # Create text elements that need to be updated
+        self.generated_rows_text = ft.Text(
+            f"Generated Rows: {len(self.generated_csv_data)}",
+            size=12,
+            color=colors['secondary_text']
+        )
+        
+        self.export_button = ft.ElevatedButton(
+            text="Export to CSV File",
+            icon=ft.Icons.DOWNLOAD,
+            on_click=self.export_to_csv,
+            style=ft.ButtonStyle(
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.GREEN
+            ),
+            disabled=len(self.generated_csv_data) == 0
+        )
+        
+        self.clear_button = ft.ElevatedButton(
+            text="Clear Data",
+            icon=ft.Icons.CLEAR,
+            on_click=self.clear_csv_data,
+            style=ft.ButtonStyle(
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.ORANGE
+            ),
+            disabled=len(self.generated_csv_data) == 0
+        )
+        
+        return ft.Column(
+            controls=[
+                *self.create_page_header("CSV Generator", include_log_button=True),
+                ft.Container(
                     content=ft.Column([
                         ft.Text(
-                            f"Script saved to: {script_path}",
-                            size=12,
-                            color=ft.Colors.GREEN_700,
-                            weight=ft.FontWeight.BOLD
+                            "Generate CSV Metadata Rows",
+                            size=18,
+                            weight=ft.FontWeight.BOLD,
+                            color=colors['primary_text']
                         ),
-                        ft.Divider(),
+                        ft.Divider(height=1, color=colors['divider']),
                         ft.Text(
-                            "AWS Commands:",
+                            "This tool creates CSV metadata rows based on selected files using the Alma Digital CSV structure.",
+                            size=14,
+                            color=colors['secondary_text']
+                        ),
+                        ft.Container(height=10),
+                        ft.Container(
+                            content=ft.Column([
+                                ft.Row([
+                                    ft.Icon(ft.Icons.INFO_OUTLINE, size=16, color=colors['primary_text']),
+                                    ft.Text(
+                                        f"Selected Files: {file_count}",
+                                        size=14,
+                                        weight=ft.FontWeight.BOLD,
+                                        color=colors['primary_text']
+                                    ),
+                                ], spacing=5),
+                                self.generated_rows_text,
+                            ], spacing=4),
+                            bgcolor=colors['markdown_bg'],
+                            border=ft.border.all(1, colors['border']),
+                            border_radius=4,
+                            padding=10,
+                            margin=ft.margin.only(top=5, bottom=10)
+                        ),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                text="Generate CSV Rows",
+                                icon=ft.Icons.LIGHTBULB_OUTLINE,
+                                on_click=self.generate_csv_rows,
+                                style=ft.ButtonStyle(
+                                    color=ft.Colors.WHITE,
+                                    bgcolor=ft.Colors.BLUE
+                                ),
+                                disabled=file_count == 0
+                            ),
+                            self.export_button,
+                            self.clear_button,
+                        ], spacing=10),
+                        ft.Container(height=10),
+                        ft.Text(
+                            "Generated CSV Data (showing non-empty columns):",
                             size=14,
                             weight=ft.FontWeight.BOLD,
                             color=colors['primary_text']
                         ),
-                        ft.Text(
-                            "Click the copy button to copy each command to clipboard",
-                            size=11,
-                            italic=True,
-                            color=colors['secondary_text']
+                        ft.Container(height=5),
+                        ft.Container(
+                            content=ft.Column([
+                                self.csv_data_table
+                            ], scroll=ft.ScrollMode.AUTO),
+                            border=ft.border.all(1, colors['border']),
+                            border_radius=5,
+                            padding=5,
+                            height=400,
                         ),
-                        ft.Container(height=10),
-                        ft.Column(
-                            command_controls,
-                            scroll=ft.ScrollMode.AUTO,
-                            height=300
-                        ),
-                    ], spacing=5),
-                    width=700,
-                ),
-                actions=[
-                    ft.TextButton("Close", on_click=lambda e: self.close_dialog(dialog))
-                ],
-                actions_alignment=ft.MainAxisAlignment.END
-            )
-            
-            self.page.overlay.append(dialog)
-            dialog.open = True
-            self.page.update()
-            
-        except Exception as ex:
-            self.logger.error(f"Error generating upload script: {ex}")
-            self.show_snack(f"Error: {ex}", is_error=True)
-    
-    def copy_to_clipboard(self, e, text):
-        """Copy text to clipboard."""
-        self.page.set_clipboard(text)
-        self.show_snack("✓ Copied to clipboard", is_error=False)
-    
-    def close_dialog(self, dialog):
-        """Close the dialog."""
-        dialog.open = False
-        self.page.update()
-    
-    def upload_files_to_azure(self, e):
-        """Upload files from temporary /OBJS directory to Azure Blob storage."""
-        try:
-            # Get the Azure base URL
-            azure_base_url = self.get_azure_base_url()
-            if not azure_base_url:
-                self.upload_status.value = "❌ Azure base URL not configured"
-                self.upload_status.color = ft.Colors.RED
-                self.upload_status.visible = True
-                self.page.update()
-                return
-            
-            # Get the temp directory from session
-            temp_dir = self.page.session.get("temp_directory")
-            if not temp_dir:
-                self.upload_status.value = "❌ No temporary directory found. Please select files first."
-                self.upload_status.color = ft.Colors.RED
-                self.upload_status.visible = True
-                self.page.update()
-                return
-            
-            # Check for OBJS directory
-            objs_dir = os.path.join(temp_dir, "OBJS")
-            if not os.path.exists(objs_dir):
-                self.upload_status.value = f"❌ No OBJS directory found in {temp_dir}"
-                self.upload_status.color = ft.Colors.RED
-                self.upload_status.visible = True
-                self.page.update()
-                return
-            
-            # Check for SMALL and TN directories (optional)
-            small_dir = os.path.join(temp_dir, "SMALL")
-            tn_dir = os.path.join(temp_dir, "TN")
-            
-            # Show progress bar
-            self.upload_progress.visible = True
-            self.upload_status.value = "🔄 Initializing Azure connection..."
-            self.upload_status.color = ft.Colors.BLUE
-            self.upload_status.visible = True
-            self.page.update()
-            
-            # Initialize Azure Blob Service Client using connection string
-            try:
-                # Get the selected storage from session
-                selected_storage = self.page.session.get("selected_storage")
-                
-                # Determine which connection string to use based on selected storage
-                if selected_storage == "collectionbuilder":
-                    connection_string = os.getenv("AZURE_CB_STORAGE_CONNECTION_STRING")
-                    storage_name = "CollectionBuilder"
-                else:  # dgobjects or other
-                    connection_string = os.getenv("AZURE_DG_STORAGE_CONNECTION_STRING")
-                    storage_name = "DG Objects"
-                
-                if not connection_string:
-                    env_var_name = "AZURE_CB_STORAGE_CONNECTION_STRING" if selected_storage == "collectionbuilder" else "AZURE_DG_STORAGE_CONNECTION_STRING"
-                    self.upload_status.value = f"❌ Azure Storage connection string not configured for {storage_name}"
-                    self.upload_status.value += f"\n\n💡 Please set {env_var_name} in .env file"
-                    self.upload_status.color = ft.Colors.RED
-                    self.upload_progress.visible = False
-                    self.logger.error(f"{env_var_name} environment variable not set")
-                    self.page.update()
-                    return
-                
-                # Create BlobServiceClient from connection string
-                blob_service_client = BlobServiceClient.from_connection_string(connection_string)
-                
-            except Exception as e:
-                error_msg = str(e)
-                self.upload_status.value = f"❌ Failed to connect to Azure Storage"
-                self.upload_status.value += f"\n\nError: {error_msg}"
-                env_var_name = "AZURE_CB_STORAGE_CONNECTION_STRING" if selected_storage == "collectionbuilder" else "AZURE_DG_STORAGE_CONNECTION_STRING"
-                self.upload_status.value += f"\n\n💡 Please check your {env_var_name} in .env file"
-                self.upload_status.color = ft.Colors.RED
-                self.upload_progress.visible = False
-                self.logger.error(f"Azure Storage connection failed: {error_msg}")
-                self.page.update()
-                return
-            
-            # Get list of files to upload from OBJS, SMALL, and TN directories
-            files_to_upload = []
-            
-            # Add files from OBJS directory
-            for root, dirs, files in os.walk(objs_dir):
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    # Create relative path for blob name
-                    relative_path = os.path.relpath(file_path, objs_dir)
-                    files_to_upload.append((file_path, relative_path))
-            
-            # Add files from SMALL directory if it exists
-            if os.path.exists(small_dir):
-                for root, dirs, files in os.walk(small_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # Create relative path for blob name, marking as from SMALL
-                        relative_path = os.path.relpath(file_path, small_dir)
-                        files_to_upload.append((file_path, relative_path))
-            
-            # Add files from TN directory if it exists
-            if os.path.exists(tn_dir):
-                for root, dirs, files in os.walk(tn_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        # Create relative path for blob name, marking as from TN
-                        relative_path = os.path.relpath(file_path, tn_dir)
-                        files_to_upload.append((file_path, relative_path))
-            
-            if not files_to_upload:
-                self.upload_status.value = "⚠️ No files found in OBJS directory"
-                self.upload_status.color = ft.Colors.ORANGE
-                self.upload_progress.visible = False
-                self.page.update()
-                return
-            
-            # Upload files
-            uploaded_count = 0
-            skipped_count = 0
-            failed_count = 0
-            total_files = len(files_to_upload)
-            
-            # Get selected mode and collection for CollectionBuilder path construction
-            selected_mode = self.page.session.get("selected_mode")
-            selected_collection = self.page.session.get("selected_collection")
-            
-            for i, (local_path, blob_name) in enumerate(files_to_upload):
-                try:
-                    self.upload_status.value = f"🔄 Uploading {blob_name} ({i+1}/{total_files})"
-                    self.upload_progress.value = i / total_files
-                    self.page.update()
-                    
-                    # Determine container based on file path
-                    if "thumbs/" in blob_name or "/TN/" in local_path:
-                        container_name = "thumbs"
-                        # Remove 'thumbs/' prefix if present
-                        blob_path = blob_name.replace("thumbs/", "")
-                    elif "smalls/" in blob_name or "/SMALL/" in local_path:
-                        container_name = "smalls"
-                        # Remove 'smalls/' prefix if present
-                        blob_path = blob_name.replace("smalls/", "")
-                    else:
-                        container_name = "objs"
-                        # Remove 'objs/' prefix if present
-                        blob_path = blob_name.replace("objs/", "")
-                    
-                    # For CollectionBuilder mode with collectionbuilder storage, prepend collection name to path
-                    if selected_mode == "CollectionBuilder" and selected_storage == "collectionbuilder" and selected_collection:
-                        blob_path = f"{selected_collection}/{blob_path}"
-                    
-                    # Create blob client
-                    blob_client = blob_service_client.get_blob_client(
-                        container=container_name, 
-                        blob=blob_path
-                    )
-                    
-                    # Check if blob already exists
-                    if blob_client.exists():
-                        self.logger.info(f"Blob '{blob_path}' already exists in container '{container_name}'. Skipping.")
-                        skipped_count += 1
-                    else:
-                        # Upload the file
-                        with open(local_path, "rb") as data:
-                            blob_client.upload_blob(data)
-                        self.logger.info(f"Successfully uploaded '{blob_path}' to container '{container_name}'")
-                        uploaded_count += 1
-                    
-                except Exception as e:
-                    self.logger.error(f"Failed to upload {blob_name}: {e}")
-                    failed_count += 1
-                    continue
-            
-            # Update final status
-            self.upload_progress.value = 1.0
-            
-            # Build detailed status message
-            status_parts = []
-            if uploaded_count > 0:
-                status_parts.append(f"✅ Uploaded: {uploaded_count}")
-            if skipped_count > 0:
-                status_parts.append(f"⏭️ Skipped: {skipped_count}")
-            if failed_count > 0:
-                status_parts.append(f"❌ Failed: {failed_count}")
-            
-            total_processed = uploaded_count + skipped_count + failed_count
-            self.upload_status.value = f"{' | '.join(status_parts)} (Total: {total_processed}/{total_files})"
-            
-            # Set color based on results
-            if failed_count > 0:
-                self.upload_status.color = ft.Colors.RED
-            elif uploaded_count == total_files:
-                self.upload_status.color = ft.Colors.GREEN
-            elif skipped_count > 0 and failed_count == 0:
-                self.upload_status.color = ft.Colors.BLUE
-            else:
-                self.upload_status.color = ft.Colors.ORANGE
-            
-            self.page.update()
-            
-        except Exception as e:
-            self.logger.error(f"Upload process failed: {e}")
-            self.upload_status.value = f"❌ Upload failed: {str(e)}"
-            self.upload_status.color = ft.Colors.RED
-            self.upload_progress.visible = False
-            self.page.update()
-    
-    def render(self) -> ft.Column:
-        """
-        Render the storage page content based on selected mode.
-        
-        Returns:
-            ft.Column: The storage page content
-        """
-        # Get theme-appropriate colors
-        colors = self.get_theme_colors()
-        
-        # Get selected mode
-        try:
-            with open("_data/persistent.json", "r", encoding="utf-8") as f:
-                persistent_data = json.load(f)
-            selected_mode = persistent_data.get("selected_mode", "Alma")
-        except Exception as e:
-            self.logger.error(f"Failed to read selected mode: {e}")
-            selected_mode = "Alma"
-        
-        if selected_mode == "Alma":
-            # For Alma mode, show markdown content only
-            alma_content = utils.read_markdown("_data/alma_storage.md")
-            
-            return ft.Column(
-                controls=[
-                    *self.create_page_header("Storage", include_log_button=True),
-                    # Markdown instructions
-                    ft.Container(
-                        content=ft.Markdown(
-                            alma_content,
-                            selectable=True,
-                            extension_set=ft.MarkdownExtensionSet.GITHUB_WEB,
-                            on_tap_link=lambda e: self.page.launch_url(e.data),
-                            md_style_sheet=self.get_markdown_style()
-                        ),
-                        bgcolor=colors['container_bg'],
-                        border=ft.border.all(1, colors['border']),
-                        border_radius=8,
-                        padding=20,
-                        margin=ft.margin.only(top=10)
-                    )
-                ],
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH
-            )
-        else:
-            # For Storage and CollectionBuilder modes, show Azure upload controls
-            azure_url = self.get_azure_base_url()
-            
-            upload_button = ft.ElevatedButton(
-                text="Upload Files to Azure",
-                icon=ft.Icons.CLOUD_UPLOAD,
-                on_click=self.upload_files_to_azure,
-                style=ft.ButtonStyle(
-                    color=ft.Colors.WHITE,
-                    bgcolor=ft.Colors.BLUE
+                    ], spacing=10),
+                    bgcolor=colors['container_bg'],
+                    border=ft.border.all(1, colors['border']),
+                    border_radius=8,
+                    padding=20,
+                    margin=ft.margin.only(top=10)
                 )
-            )
-            
-            upload_controls = ft.Column(
-                controls=[
-                    ft.Text(
-                        "Azure Storage Upload",
-                        size=18,
-                        weight=ft.FontWeight.BOLD,
-                        color=colors['primary_text']
-                    ),
-                    ft.Divider(height=1, color=colors['divider']),
-                    ft.Text(
-                        f"Azure Base URL: {azure_url or 'Not configured'}",
-                        size=14,
-                        color=colors['secondary_text']
-                    ),
-                    ft.Text(
-                        "This will upload files from the temporary /OBJS directory to Azure Blob storage.",
-                        size=14,
-                        color=colors['secondary_text']
-                    ),
-                    ft.Container(
-                        content=ft.Column([
-                            ft.Text(
-                                "📋 Prerequisites:",
-                                size=14,
-                                weight=ft.FontWeight.BOLD,
-                                color=colors['primary_text']
-                            ),
-                            ft.Text(
-                                "• Files must be selected first (via File Selector page)",
-                                size=12,
-                                color=colors['secondary_text']
-                            ),
-                            ft.Text(
-                                "• Azure Storage connection string must be configured in .env file",
-                                size=12,
-                                color=colors['secondary_text']
-                            ),
-                            ft.Text(
-                                "  AZURE_STORAGE_CONNECTION_STRING=\"...\"",
-                                size=11,
-                                color=colors['code_text'],
-                                font_family="monospace"
-                            ),
-                        ], spacing=4),
-                        bgcolor=colors['markdown_bg'],
-                        border=ft.border.all(1, colors['border']),
-                        border_radius=4,
-                        padding=10,
-                        margin=ft.margin.only(top=10, bottom=10)
-                    ),
-                    ft.Container(
-                        content=upload_button,
-                        margin=ft.margin.only(top=20, bottom=10)
-                    ),
-                    self.upload_progress,
-                    self.upload_status
-                ],
-                spacing=10,
-                horizontal_alignment=ft.CrossAxisAlignment.START
-            )
-            
-            return ft.Column(
-                controls=[
-                    *self.create_page_header("Storage", include_log_button=True),
-                    ft.Container(
-                        content=upload_controls,
-                        bgcolor=colors['container_bg'],
-                        border=ft.border.all(1, colors['border']),
-                        border_radius=8,
-                        padding=20,
-                        margin=ft.margin.only(top=10)
-                    )
-                ],
-                spacing=0,
-                horizontal_alignment=ft.CrossAxisAlignment.STRETCH
-            )
+            ],
+            spacing=0,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+            expand=True
+        )

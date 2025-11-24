@@ -92,6 +92,9 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
     Recursively search for files in base_path and find the best match for target_filename
     using difflib.SequenceMatcher for proper sequence-based similarity.
     
+    Applies a 10-point penalty if the difference between target and match is purely numeric
+    (e.g., "file_52.pdf" vs "file_25.pdf").
+    
     Args:
         base_path (str): The directory to start searching from
         target_filename (str): The filename to match against
@@ -100,6 +103,8 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
     Returns:
         tuple: (best_match_path, best_match_ratio) or (None, 0) if no match found
     """
+    import re
+    
     try:
         best_match_path = None
         best_match_ratio = 0
@@ -110,6 +115,23 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
             for filename in files:
                 # Calculate sequence-based similarity ratio
                 ratio = calculate_string_similarity(filename.lower(), target_filename.lower())
+                
+                # Check if difference is purely numeric and apply penalty
+                if ratio > 0:
+                    # Extract all numeric sequences from both filenames
+                    target_numbers = set(re.findall(r'\d+', target_filename))
+                    match_numbers = set(re.findall(r'\d+', filename))
+                    
+                    # If they have different numbers but everything else matches closely
+                    if target_numbers != match_numbers and ratio >= 85:
+                        # Check if non-numeric parts are very similar
+                        target_non_numeric = re.sub(r'\d+', '#', target_filename.lower())
+                        match_non_numeric = re.sub(r'\d+', '#', filename.lower())
+                        
+                        # If non-numeric parts match exactly, this is likely a numeric-only difference
+                        if target_non_numeric == match_non_numeric:
+                            ratio = max(0, ratio - 10)
+                            logging.info(f"Applied 10-point penalty for numeric-only difference: '{target_filename}' vs '{filename}' (ratio: {ratio + 10} -> {ratio})")
                 
                 # Update best match if this ratio is higher
                 if ratio > best_match_ratio:

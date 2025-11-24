@@ -351,83 +351,7 @@ class FilePickerSelectorView(FileSelectorView):
         super().__init__(page, "FilePicker")
         self.selected_files = []
         self.selected_files_list = None
-    
-    def load_last_directory(self):
-        """Load the last used directory from persistent storage."""
-        try:
-            import json
-            import os
-            persistent_file = os.path.join(os.path.expanduser("~"), ".mdi_persistent.json")
-            if os.path.exists(persistent_file):
-                with open(persistent_file, 'r') as f:
-                    data = json.load(f)
-                    return data.get("last_directory")
-        except Exception as e:
-            self.logger.error(f"Error loading last directory: {str(e)}")
-        return None
-    
-    def save_last_directory(self, directory):
-        """Save the last used directory to persistent storage."""
-        try:
-            import json
-            import os
-            persistent_file = os.path.join(os.path.expanduser("~"), ".mdi_persistent.json")
-            data = {}
-            if os.path.exists(persistent_file):
-                with open(persistent_file, 'r') as f:
-                    data = json.load(f)
-            
-            data["last_directory"] = directory
-            
-            with open(persistent_file, 'w') as f:
-                json.dump(data, f)
-        except Exception as e:
-            self.logger.error(f"Error saving last directory: {str(e)}")
-    
-    def is_image_file(self, file_path):
-        """Check if a file is an image based on its extension."""
-        try:
-            image_extensions = {'.jpg', '.jpeg', '.png', '.tiff', '.tif', '.gif', '.bmp', '.webp'}
-            return any(file_path.lower().endswith(ext) for ext in image_extensions)
-        except Exception as e:
-            self.logger.error(f"Error checking image file: {str(e)}")
-            return False
-    
-    def render(self) -> ft.Column:
-        """
-        Render the file selector view content.
-        This base implementation should be overridden by subclasses.
-        
-        Returns:
-            ft.Column: The file selector page layout
-        """
-        self.on_view_enter()
-        
-        # Get theme-appropriate colors
-        colors = self.get_theme_colors()
-        
-        return ft.Column([
-            ft.Row([
-                ft.Text(f"File Selector - {self.selector_type}", size=24, weight=ft.FontWeight.BOLD),
-                self.create_log_button("Show Logs", ft.Icons.LIST_ALT)
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=15),
-            ft.Text(f"File selector functionality for {self.selector_type} will be implemented here.",
-                   size=16, color=colors['primary_text']),
-        ], alignment="center")
-
-
-class FilePickerSelectorView(FileSelectorView):
-    """
-    File picker implementation of the file selector view.
-    Handles local file system file selection.
-    """
-    
-    def __init__(self, page: ft.Page):
-        """Initialize the file picker selector view."""
-        super().__init__(page, "FilePicker")
-        self.selected_files = []
-        self.selected_files_list = None
+        self.temp_status_container = None  # Store reference to temp status display
     
     def load_last_directory(self):
         """Load the last used directory from persistent storage."""
@@ -567,6 +491,9 @@ class FilePickerSelectorView(FileSelectorView):
                     )
             self.page.update()
         
+        # Create temp status display and store reference
+        self.temp_status_container = self.create_temp_status_display(colors)
+        
         return ft.Column([
             ft.Row([
                 ft.Text(f"File Selector - {self.selector_type}", size=24, weight=ft.FontWeight.BOLD),
@@ -599,7 +526,7 @@ class FilePickerSelectorView(FileSelectorView):
             ft.Text("Selected Files:", size=16, weight=ft.FontWeight.BOLD, color=colors['primary_text']),
             ft.Container(height=5),
             # Show temporary directory status
-            self.create_temp_status_display(colors),
+            self.temp_status_container,
             ft.Container(height=5),
             ft.Container(
                 content=self.selected_files_list,
@@ -646,6 +573,9 @@ class FilePickerSelectorView(FileSelectorView):
         temp_dir = self.page.session.get("temp_directory")
         temp_files = self.page.session.get("temp_files") or []
         
+        # Debug logging
+        self.logger.info(f"create_temp_status_display: temp_dir={temp_dir}, temp_files count={len(temp_files)}")
+        
         if temp_dir and temp_files:
             return ft.Container(
                 content=ft.Column([
@@ -669,6 +599,31 @@ class FilePickerSelectorView(FileSelectorView):
                 bgcolor=ft.Colors.ORANGE_50
             )
     
+    def update_temp_status_display(self):
+        """Update the temporary directory status display."""
+        if self.temp_status_container:
+            colors = self.get_theme_colors()
+            temp_dir = self.page.session.get("temp_directory")
+            temp_files = self.page.session.get("temp_files") or []
+            
+            # Clear and rebuild the container content
+            if temp_dir and temp_files:
+                self.temp_status_container.content = ft.Column([
+                    ft.Text(f"📁 Temporary Directory: {len(temp_files)} files ready", 
+                           size=12, color=colors['secondary_text']),
+                    ft.Text(f"   {temp_dir}", 
+                           size=11, color=colors['secondary_text'], italic=True)
+                ], spacing=2)
+                self.temp_status_container.bgcolor = ft.Colors.GREEN_50
+                self.temp_status_container.border = ft.border.all(1, ft.Colors.GREEN_200)
+            else:
+                self.temp_status_container.content = ft.Text("📁 No temporary files - select files to automatically create links", 
+                               size=12, color=colors['secondary_text'])
+                self.temp_status_container.bgcolor = ft.Colors.ORANGE_50
+                self.temp_status_container.border = ft.border.all(1, ft.Colors.ORANGE_200)
+            
+            self.page.update()
+    
     def on_copy_files_to_temp(self, e):
         """Handle creating symbolic links to files in temporary directory."""
         file_paths = self.page.session.get("selected_file_paths") or []
@@ -690,6 +645,38 @@ class FilePickerSelectorView(FileSelectorView):
             self.page.go("/file_selector")
         else:
             self.show_snack("Failed to create symbolic links in temporary directory", is_error=True)
+    
+    def auto_perform_file_picker_workflow(self, file_paths):
+        """Automatically create links for directly selected files."""
+        if not file_paths:
+            return
+        
+        temp_files = []
+        
+        try:
+            # Create symbolic links WITHOUT showing progress dialog
+            # (the operation is fast enough not to need it)
+            self.logger.info(f"Auto-workflow: Creating symbolic links for {len(file_paths)} files")
+            temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(file_paths)
+            
+            # Update selected_file_paths to point to temp files so derivatives are created there
+            if temp_files:
+                self.page.session.set("selected_file_paths", temp_files)
+            
+        except Exception as ex:
+            self.logger.error(f"Error during file picker automatic workflow: {str(ex)}")
+        
+        # Show results and update UI
+        if temp_files:
+            self.show_snack(f"Successfully created links for {len(file_paths)} files.")
+            self.logger.info(f"Auto-workflow: Complete. Created {len(temp_files)} symbolic links.")
+            # Update the temp status display
+            try:
+                self.update_temp_status_display()
+            except Exception as ex:
+                self.logger.error(f"Error updating temp status display: {ex}")
+        else:
+            self.show_snack("Failed to create symbolic links for selected files", is_error=True)
 
 
 class CSVSelectorView(FileSelectorView):
@@ -1889,73 +1876,6 @@ class CSVSelectorView(FileSelectorView):
         except Exception as e:
             self.logger.error(f"Error during automatic fuzzy search: {str(e)}")
             return None
-    
-    def auto_perform_file_picker_workflow(self, file_paths):
-        """Automatically create links for directly selected files."""
-        if not file_paths:
-            return
-        
-        # Show progress dialog
-        progress_dialog = ft.AlertDialog(
-            title=ft.Text("Processing Files"),
-            content=ft.Column([
-                ft.Text("Creating links..."),
-                ft.ProgressRing()
-            ], tight=True, height=100),
-            modal=True
-        )
-        
-        self.page.overlay.append(progress_dialog)
-        progress_dialog.open = True
-        self.page.update()
-        
-        try:
-            # Create symbolic links
-            self.logger.info(f"Auto-workflow: Creating symbolic links for {len(file_paths)} files")
-            temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(file_paths)
-            
-            # Update selected_file_paths to point to temp files so derivatives are created there
-            if temp_files:
-                self.page.session.set("selected_file_paths", temp_files)
-            
-            if temp_files:
-                # Close progress dialog
-                progress_dialog.open = False
-                self.page.update()
-                
-                # Show result
-                self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text(f"Successfully created links for {len(file_paths)} files. Use the Derivatives menu to generate thumbnails and derivatives."),
-                    bgcolor=ft.Colors.GREEN_400
-                )
-            else:
-                # Close progress dialog
-                progress_dialog.open = False
-                self.page.update()
-                
-                self.page.snack_bar = ft.SnackBar(
-                    content=ft.Text("Failed to create symbolic links for selected files"),
-                    bgcolor=ft.Colors.RED_400
-                )
-            
-            self.page.snack_bar.open = True
-            self.page.update()
-            
-            # Refresh to show updated status
-            self.page.go("/file_selector")
-            
-        except Exception as ex:
-            # Close progress dialog on error
-            progress_dialog.open = False
-            self.page.update()
-            
-            self.logger.error(f"Error during file picker automatic workflow: {str(ex)}")
-            self.page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"Error during automatic processing: {str(ex)}"),
-                bgcolor=ft.Colors.RED_400
-            )
-            self.page.snack_bar.open = True
-            self.page.update()
     
     def do_fuzzy_search(self, e):
         """Perform fuzzy search using utils.perform_fuzzy_search_batch."""

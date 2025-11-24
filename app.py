@@ -109,7 +109,7 @@ class MDIApplication:
             "/exit": ExitView(page),
             "/file_selector": None,  # Will be dynamically created
             "/create_derivatives": DerivativesView(page),
-            "/azure_storage": StorageView(page),
+            "/csv_generator": StorageView(page),
             "/show_instructions": InstructionsView(page),
             "/update_csv": UpdateCSVView(page),
             "/show_logs": LogView(page),
@@ -127,8 +127,8 @@ class MDIApplication:
         def nav_create_derivatives(e):
             page.go("/create_derivatives")
         
-        def nav_azure_storage(e):
-            page.go("/azure_storage")
+        def nav_csv_generator(e):
+            page.go("/csv_generator")
         
         def nav_show_instructions(e):
             page.go("/show_instructions")
@@ -168,7 +168,7 @@ class MDIApplication:
                 ),
                 ft.IconButton(ft.Icons.FILE_OPEN, tooltip="File Selector", on_click=nav_file_selector),
                 ft.IconButton(ft.Icons.AUTO_FIX_HIGH, tooltip="Create Derivatives", on_click=nav_create_derivatives),
-                ft.IconButton(ft.Icons.CLOUD_UPLOAD, tooltip="Azure Storage", on_click=nav_azure_storage),
+                ft.IconButton(ft.Icons.GRID_ON, tooltip="CSV Generator", on_click=nav_csv_generator),
                 ft.IconButton(ft.Icons.TABLE_CHART, tooltip="Update CSV", on_click=nav_update_csv),
                 ft.IconButton(ft.Icons.INTEGRATION_INSTRUCTIONS_ROUNDED, tooltip="Show Final Instructions", on_click=nav_show_instructions),
                 # Vertical separator before the Exit icon
