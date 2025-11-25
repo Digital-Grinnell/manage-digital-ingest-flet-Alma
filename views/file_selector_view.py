@@ -1835,6 +1835,8 @@ class CSVSelectorView(FileSelectorView):
             
             for filename in selected_files:
                 match_path, ratio = results.get(filename, (None, 0))
+                self.logger.info(f"Processing '{filename}': match_path={match_path}, ratio={ratio}")
+                
                 if match_path and ratio >= 90:
                     matched_paths.append(match_path)
                     matched_ratios.append(ratio)
@@ -1857,7 +1859,7 @@ class CSVSelectorView(FileSelectorView):
                     elif ratio < 90:
                         self.logger.warning(f"Auto-workflow: No match found for '{filename}' ({ratio}% match - below 90% threshold)")
                     else:
-                        self.logger.info(f"Auto-workflow: No match found for '{filename}' meeting 90% threshold")
+                        self.logger.warning(f"Auto-workflow: HIGH RATIO BUT NO PATH for '{filename}' ({ratio}% match, path={match_path})")
             
             # Store search statistics
             self.page.session.set("original_filename_count", original_count)

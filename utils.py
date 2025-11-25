@@ -87,10 +87,38 @@ def sanitize_filename(filename):
     sanitized = re.sub(r'_+', '_', sanitized)
     return sanitized
 
+def normalize_for_matching(value):
+    """
+    Normalize a string for matching by removing extension and replacing separators.
+    This function is used for fuzzy matching to treat underscores, hyphens, and spaces
+    as equivalent.
+    
+    Args:
+        value: The string to normalize (typically a filename)
+        
+    Returns:
+        str: Normalized string with extension removed, separators replaced,
+             periods removed, and lowercased
+    """
+    if not value:
+        return ""
+    # Remove extension
+    value = os.path.splitext(str(value))[0]
+    # Replace underscores, hyphens, and spaces with a common character
+    value = value.replace('_', '-').replace(' ', '-')
+    # Remove periods (common in middle initials like "A.")
+    value = value.replace('.', '')
+    # Convert to lowercase
+    value = value.lower()
+    return value
+
 def perform_fuzzy_search(base_path, target_filename, threshold=90):
     """
     Recursively search for files in base_path and find the best match for target_filename
     using difflib.SequenceMatcher for proper sequence-based similarity.
+    
+    Normalizes filenames before comparison by treating underscores, hyphens, and spaces
+    as equivalent to improve matching accuracy.
     
     Applies a 10-point penalty if the difference between target and match is purely numeric
     (e.g., "file_52.pdf" vs "file_25.pdf").
@@ -109,24 +137,30 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
         best_match_path = None
         best_match_ratio = 0
         
+        # Normalize the target filename for matching
+        normalized_target = normalize_for_matching(target_filename)
+        
         # Search through ALL files to find the absolute best match
         # Don't terminate early, even on 100% match, to ensure we find the best one
         for root, dirs, files in os.walk(base_path):
             for filename in files:
-                # Calculate sequence-based similarity ratio
-                ratio = calculate_string_similarity(filename.lower(), target_filename.lower())
+                # Normalize both filenames before comparison
+                normalized_candidate = normalize_for_matching(filename)
+                
+                # Calculate sequence-based similarity ratio on normalized names
+                ratio = calculate_string_similarity(normalized_candidate, normalized_target)
                 
                 # Check if difference is purely numeric and apply penalty
                 if ratio > 0:
-                    # Extract all numeric sequences from both filenames
-                    target_numbers = set(re.findall(r'\d+', target_filename))
-                    match_numbers = set(re.findall(r'\d+', filename))
+                    # Extract all numeric sequences from both NORMALIZED filenames
+                    target_numbers = set(re.findall(r'\d+', normalized_target))
+                    match_numbers = set(re.findall(r'\d+', normalized_candidate))
                     
                     # If they have different numbers but everything else matches closely
-                    if target_numbers != match_numbers and ratio >= 85:
+                    if target_numbers != match_numbers and ratio >= 90:
                         # Check if non-numeric parts are very similar
-                        target_non_numeric = re.sub(r'\d+', '#', target_filename.lower())
-                        match_non_numeric = re.sub(r'\d+', '#', filename.lower())
+                        target_non_numeric = re.sub(r'\d+', '#', normalized_target)
+                        match_non_numeric = re.sub(r'\d+', '#', normalized_candidate)
                         
                         # If non-numeric parts match exactly, this is likely a numeric-only difference
                         if target_non_numeric == match_non_numeric:

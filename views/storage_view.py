@@ -200,20 +200,6 @@ class StorageView(BaseView):
             
             self.logger.info(f"Processing {len(self.generated_csv_data)} generated rows")
             
-            def normalize_for_matching(value):
-                """Normalize a string for matching by removing extension and replacing separators."""
-                if not value:
-                    return ""
-                # Remove extension
-                value = os.path.splitext(str(value))[0]
-                # Replace underscores, hyphens, and spaces with a common character
-                value = value.replace('_', '-').replace(' ', '-')
-                # Remove periods (common in middle initials like "A.")
-                value = value.replace('.', '')
-                # Convert to lowercase
-                value = value.lower()
-                return value
-            
             for row in self.generated_csv_data:
                 # Try to find a match value in the generated row
                 # Start with file_name_1 (always present in generated rows)
@@ -225,7 +211,7 @@ class StorageView(BaseView):
                     continue
                 
                 # Normalize the match value for flexible matching
-                normalized_match = normalize_for_matching(match_value)
+                normalized_match = utils.normalize_for_matching(match_value)
                 
                 # Try exact match first
                 matching_rows = self.metadata_df[self.metadata_df[match_column] == match_value]
@@ -233,7 +219,7 @@ class StorageView(BaseView):
                 # If no exact match, try normalized matching
                 if matching_rows.empty:
                     # Find rows where normalized metadata value matches normalized generated value
-                    metadata_normalized = self.metadata_df[match_column].apply(normalize_for_matching)
+                    metadata_normalized = self.metadata_df[match_column].apply(utils.normalize_for_matching)
                     
                     matching_rows = self.metadata_df[
                         metadata_normalized == normalized_match
@@ -248,10 +234,26 @@ class StorageView(BaseView):
                     row_fields_merged = 0
                     for col in self.metadata_df.columns:
                         if col in row and pd.notna(metadata_row[col]) and metadata_row[col]:
-                            # Only overwrite if the generated row value is empty
-                            if not row[col]:
+                            # Special handling for dc:title - always overwrite from metadata
+                            if col == 'dc:title':
                                 row[col] = str(metadata_row[col])
                                 row_fields_merged += 1
+                            # Only populate other fields if the generated row value is empty
+                            elif not row[col]:
+                                row[col] = str(metadata_row[col])
+                                row_fields_merged += 1
+                    
+                    # Generate unique ID for originating_system_id
+                    if 'originating_system_id' in row:
+                        unique_id = utils.generate_unique_id(self.page)
+                        row['originating_system_id'] = unique_id
+                        
+                        # Convert to Handle URL for dc:identifier
+                        if 'dc:identifier' in row:
+                            # Extract numeric portion (e.g., "dg_1234567890" -> "1234567890")
+                            numeric_part = unique_id.split('_')[-1] if '_' in unique_id else unique_id
+                            row['dc:identifier'] = f"http://hdl.handle.net/11084/{numeric_part}"
+                            row_fields_merged += 2  # Count both originating_system_id and dc:identifier
                     
                     if row_fields_merged > 0:
                         fields_merged += row_fields_merged
