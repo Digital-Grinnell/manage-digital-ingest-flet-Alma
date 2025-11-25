@@ -150,12 +150,22 @@ If you don't have a CSV file yet, you can generate one from your selected files:
    - All other fields remain blank for manual editing
    - Uses Alma-D CSV structure (66+ columns)
 4. Review generated data in the table view
-5. Click **"Export to CSV File"**
+5. **Optional: Merge Existing Metadata**
+   - If you have an existing CSV with descriptive metadata:
+     - Click **"Upload Metadata CSV"**
+     - Select your CSV file with metadata
+     - Click **"Merge Metadata"**
+     - Matching rows are merged based on `file_name_1`
+     - Only empty fields are populated (existing data preserved)
+     - Review merge statistics in snack bar
+6. Click **"Export to CSV File"**
    - Choose destination directory
    - CSV file is saved with timestamp: `generated_metadata_YYYYMMDD_HHMMSS.csv`
-6. Edit the exported CSV to add metadata before proceeding with workflow
+7. Edit the exported CSV to add/refine metadata before proceeding with workflow
 
 **Note**: Generated CSV rows are stored in session storage and cleared when app restarts.
+
+**Tip**: The merge feature is useful when you have partial metadata (descriptions, subjects, dates) in one CSV and want to combine it with newly generated file information.
 
 ### Step 4: Derivatives - Generate Thumbnails
 
@@ -334,10 +344,13 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 - **Generate Metadata**: Create initial CSV rows from selected files
 - **Alma-D Structure**: Uses verified 66+ column Alma Digital CSV format
 - **Auto-populate**: Fills `file_name_1` and `dc:title` fields automatically
+- **Upload Metadata CSV**: Load existing CSV file with descriptive metadata
+- **Merge Metadata**: Combine uploaded metadata with generated rows by matching `file_name_1`
 - **Preview Table**: View generated data before export
 - **Export to CSV**: Save generated metadata to any directory
 - **Session Storage**: Temporarily stores generated rows (cleared on app restart)
 - **Timestamp Filenames**: Exported files include timestamp for version tracking
+- **Smart Merge**: Only populates empty fields, preserves existing data
 
 ### Derivatives
 - **TN Generation**: Create thumbnail images (200px max)

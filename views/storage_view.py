@@ -22,6 +22,9 @@ class StorageView(BaseView):
         self.generated_rows_text = None
         self.export_button = None
         self.clear_button = None
+        self.merge_button = None
+        self.metadata_csv_path = None
+        self.metadata_df = None
     
     def load_csv_headings(self):
         """Load CSV headings from verified headings file."""
@@ -91,6 +94,11 @@ class StorageView(BaseView):
         if self.clear_button:
             self.clear_button.disabled = False
         
+        # Enable merge button if metadata is already loaded
+        if self.merge_button and self.metadata_df is not None:
+            self.logger.info("Enabling merge button after CSV generation (metadata already loaded)")
+            self.merge_button.disabled = False
+        
         self.page.update()
         
         self.show_snack(f"Generated {len(self.generated_csv_data)} CSV rows")
@@ -117,6 +125,149 @@ class StorageView(BaseView):
         except Exception as e:
             self.logger.error(f"Failed to load generated CSV data: {e}")
             self.generated_csv_data = []
+    
+    def on_metadata_csv_result(self, e: ft.FilePickerResultEvent):
+        """Handle metadata CSV file selection."""
+        if e.files and len(e.files) > 0:
+            self.metadata_csv_path = e.files[0].path
+            try:
+                # Load the metadata CSV
+                self.metadata_df = pd.read_csv(self.metadata_csv_path, dtype=str, keep_default_na=False)
+                self.logger.info(f"Loaded metadata CSV with {len(self.metadata_df)} rows and {len(self.metadata_df.columns)} columns")
+                self.show_snack(f"Loaded metadata CSV: {os.path.basename(self.metadata_csv_path)}")
+                
+                # Update the metadata CSV text display
+                if self.metadata_csv_text:
+                    self.metadata_csv_text.value = f"Metadata CSV: {os.path.basename(self.metadata_csv_path)}"
+                    self.logger.info(f"Updated metadata_csv_text to: {self.metadata_csv_text.value}")
+                
+                # Enable merge button if we have generated data
+                if self.merge_button and self.generated_csv_data:
+                    self.logger.info(f"Enabling merge button - have {len(self.generated_csv_data)} generated rows")
+                    self.merge_button.disabled = False
+                else:
+                    self.logger.info(f"Not enabling merge button - merge_button exists: {self.merge_button is not None}, generated_csv_data count: {len(self.generated_csv_data) if self.generated_csv_data else 0}")
+                
+                self.page.update()
+                    
+            except Exception as ex:
+                self.logger.error(f"Failed to load metadata CSV: {ex}")
+                self.show_snack(f"Failed to load metadata CSV: {ex}", is_error=True)
+                self.metadata_csv_path = None
+                self.metadata_df = None
+    
+    def upload_metadata_csv(self, e):
+        """Open file picker to select metadata CSV."""
+        metadata_picker = ft.FilePicker(on_result=self.on_metadata_csv_result)
+        self.page.overlay.append(metadata_picker)
+        self.page.update()
+        metadata_picker.pick_files(
+            dialog_title="Select Metadata CSV File",
+            allowed_extensions=["csv"],
+            allow_multiple=False
+        )
+    
+    def merge_metadata(self, e):
+        """Merge metadata from uploaded CSV into generated rows."""
+        self.logger.info(f"merge_metadata called - metadata_df is None: {self.metadata_df is None}, generated_csv_data count: {len(self.generated_csv_data)}")
+        
+        if self.metadata_df is None or not self.generated_csv_data:
+            self.show_snack("Please generate CSV rows and upload metadata CSV first", is_error=True)
+            return
+        
+        try:
+            # Determine which column to use for matching
+            # Try file_name_1 first (most direct), then dc:identifier, dc:title, or Title
+            match_column = None
+            potential_match_cols = ['file_name_1', 'dc:identifier', 'dc:title', 'Title', 'title', 'Filename', 'filename']
+            
+            for col in potential_match_cols:
+                if col in self.metadata_df.columns:
+                    match_column = col
+                    self.logger.info(f"Using '{match_column}' for matching")
+                    break
+            
+            if not match_column:
+                self.logger.error(f"No suitable match column found. Metadata CSV columns: {list(self.metadata_df.columns)}")
+                self.show_snack(f"Metadata CSV must contain one of: {', '.join(potential_match_cols[:3])}", is_error=True)
+                return
+            
+            self.logger.info(f"Starting merge with match column: {match_column}")
+            self.logger.info(f"Metadata CSV columns: {list(self.metadata_df.columns)}")
+            
+            merged_count = 0
+            fields_merged = 0
+            
+            self.logger.info(f"Processing {len(self.generated_csv_data)} generated rows")
+            
+            def normalize_for_matching(value):
+                """Normalize a string for matching by removing extension and replacing separators."""
+                if not value:
+                    return ""
+                # Remove extension
+                value = os.path.splitext(str(value))[0]
+                # Replace underscores, hyphens, and spaces with a common character
+                value = value.replace('_', '-').replace(' ', '-')
+                # Remove periods (common in middle initials like "A.")
+                value = value.replace('.', '')
+                # Convert to lowercase
+                value = value.lower()
+                return value
+            
+            for row in self.generated_csv_data:
+                # Try to find a match value in the generated row
+                # Start with file_name_1 (always present in generated rows)
+                match_value = None
+                if 'file_name_1' in row and row['file_name_1']:
+                    match_value = row['file_name_1']
+                
+                if not match_value:
+                    continue
+                
+                # Normalize the match value for flexible matching
+                normalized_match = normalize_for_matching(match_value)
+                
+                # Try exact match first
+                matching_rows = self.metadata_df[self.metadata_df[match_column] == match_value]
+                
+                # If no exact match, try normalized matching
+                if matching_rows.empty:
+                    # Find rows where normalized metadata value matches normalized generated value
+                    metadata_normalized = self.metadata_df[match_column].apply(normalize_for_matching)
+                    
+                    matching_rows = self.metadata_df[
+                        metadata_normalized == normalized_match
+                    ]
+                    if not matching_rows.empty:
+                        self.logger.info(f"Matched '{match_value}' using normalized comparison")
+                
+                if not matching_rows.empty:
+                    metadata_row = matching_rows.iloc[0]
+                    
+                    # Merge metadata into generated row
+                    row_fields_merged = 0
+                    for col in self.metadata_df.columns:
+                        if col in row and pd.notna(metadata_row[col]) and metadata_row[col]:
+                            # Only overwrite if the generated row value is empty
+                            if not row[col]:
+                                row[col] = str(metadata_row[col])
+                                row_fields_merged += 1
+                    
+                    if row_fields_merged > 0:
+                        fields_merged += row_fields_merged
+                        merged_count += 1
+            
+            self.logger.info(f"Merged metadata for {merged_count} rows ({fields_merged} total fields)")
+            
+            # Save and refresh display
+            self.save_generated_csv()
+            self.display_csv_data()
+            
+            self.show_snack(f"Merged {fields_merged} fields across {merged_count} of {len(self.generated_csv_data)} rows")
+            
+        except Exception as ex:
+            self.logger.error(f"Failed to merge metadata: {ex}")
+            self.show_snack(f"Merge failed: {ex}", is_error=True)
     
     def display_csv_data(self):
         """Display the generated CSV data in a table."""
@@ -261,6 +412,12 @@ class StorageView(BaseView):
             color=colors['secondary_text']
         )
         
+        self.metadata_csv_text = ft.Text(
+            f"Metadata CSV: {os.path.basename(self.metadata_csv_path) if self.metadata_csv_path else 'None'}",
+            size=12,
+            color=colors['secondary_text']
+        )
+        
         self.export_button = ft.ElevatedButton(
             text="Export to CSV File",
             icon=ft.Icons.DOWNLOAD,
@@ -281,6 +438,27 @@ class StorageView(BaseView):
                 bgcolor=ft.Colors.ORANGE
             ),
             disabled=len(self.generated_csv_data) == 0
+        )
+        
+        self.upload_metadata_button = ft.ElevatedButton(
+            text="Upload Metadata CSV",
+            icon=ft.Icons.UPLOAD_FILE,
+            on_click=self.upload_metadata_csv,
+            style=ft.ButtonStyle(
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.PURPLE
+            )
+        )
+        
+        self.merge_button = ft.ElevatedButton(
+            text="Merge Metadata",
+            icon=ft.Icons.MERGE,
+            on_click=self.merge_metadata,
+            style=ft.ButtonStyle(
+                color=ft.Colors.WHITE,
+                bgcolor=ft.Colors.DEEP_PURPLE
+            ),
+            disabled=True  # Will be enabled when both CSV data and metadata are available
         )
         
         return ft.Column(
@@ -313,6 +491,7 @@ class StorageView(BaseView):
                                     ),
                                 ], spacing=5),
                                 self.generated_rows_text,
+                                self.metadata_csv_text,
                             ], spacing=4),
                             bgcolor=colors['markdown_bg'],
                             border=ft.border.all(1, colors['border']),
@@ -331,6 +510,10 @@ class StorageView(BaseView):
                                 ),
                                 disabled=file_count == 0
                             ),
+                            self.upload_metadata_button,
+                            self.merge_button,
+                        ], spacing=10),
+                        ft.Row([
                             self.export_button,
                             self.clear_button,
                         ], spacing=10),

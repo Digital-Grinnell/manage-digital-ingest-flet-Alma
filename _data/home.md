@@ -10,7 +10,7 @@
     - ability to read a list of digital object filenames from a `CSV` file,  
       - coupled with a "fuzzy" network file search utility with numeric-only difference penalty, and
       - automatic update of the `CSV` with unique IDs, collection IDs, compound object handling, and revised file names/paths,
-  - **📊 CSV Generator** - create initial CSV rows from selected files using Alma-D structure,
+  - **📊 CSV Generator** - create initial CSV rows from selected files using Alma-D structure, with optional metadata merge from existing CSV files,
   - **✨ Create Derivatives** - Alma derivative creation utility (200x200 thumbnails with .clientThumb extension),
   - **📋 Update CSV** - metadata update utility with compound object (parent/child) relationship management and automatic TOC generation,
   - **📖 Final Instructions** - AWS S3 upload script generator for Alma Digital ingest and follow-up instructions to assist in Alma ingest operations.
