@@ -168,10 +168,15 @@ class UpdateCSVView(BaseView):
                 if comment_count > 0:
                     self.logger.info(f"Removing {comment_count} comment row(s) from values.csv")
                 
-                # Blank out collection_id column if it exists
-                if 'collection_id' in csv_data_filtered.columns:
+                # Blank out collection_id column for all rows EXCEPT the last one (self-referential CSV row)
+                if 'collection_id' in csv_data_filtered.columns and len(csv_data_filtered) > 0:
+                    # Store the last row's collection_id value
+                    last_collection_id = csv_data_filtered.iloc[-1]['collection_id']
+                    # Blank out all collection_id values
                     csv_data_filtered['collection_id'] = ''
-                    self.logger.info(f"Blanked out collection_id column in values.csv")
+                    # Restore the last row's collection_id
+                    csv_data_filtered.iloc[-1, csv_data_filtered.columns.get_loc('collection_id')] = last_collection_id
+                    self.logger.info(f"Blanked out collection_id column in values.csv (except last row: {last_collection_id})")
                 
                 # Save with minimal quoting
                 csv_data_filtered.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
