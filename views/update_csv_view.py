@@ -311,7 +311,7 @@ class UpdateCSVView(BaseView):
                 # Populate specific columns
                 new_row['originating_system_id'] = unique_id
                 new_row['dc:identifier'] = handle_url  # Use Handle URL format in Alma mode
-                # new_row['collection_id'] = '81342586470004641'  # Leave collection_id as-is
+                new_row['collection_id'] = '81342586470004641'  # Self-referential row has collection_id
                 new_row['dc:type'] = 'Dataset'  # CSV file is a dataset
                 
                 # Use the sanitized temp CSV filename for both dc:title and file_name_1
@@ -383,8 +383,15 @@ class UpdateCSVView(BaseView):
                 if handle_count > 0:
                     self.logger.info(f"Set {handle_count} dc:identifier cell(s) to Handle URL format")
             
-            # Step 3.6: collection_id cells are left as-is (not modified)
-            # Users manage collection_id values themselves
+            # Step 3.6: Blank out collection_id for all rows except the last one (self-referential CSV row)
+            if current_mode == "Alma" and 'collection_id' in self.csv_data.columns:
+                # Blank out all rows except the last one
+                for idx in range(len(self.csv_data) - 1):  # Exclude last row
+                    # Skip comment rows
+                    if self.is_comment_row(idx):
+                        continue
+                    self.csv_data.at[idx, 'collection_id'] = ''
+                self.logger.info(f"Blanked out collection_id for {len(self.csv_data) - 1} rows (keeping last row's value)")
             
             # Step 3.65: Process Alma compound parent/child relationships
             if current_mode == "Alma" and 'compoundrelationship' in self.csv_data.columns:
@@ -587,7 +594,7 @@ class UpdateCSVView(BaseView):
             # Populate specific columns
             new_row['originating_system_id'] = unique_id
             new_row['dc:identifier'] = handle_url  # Use Handle URL format in Alma mode
-            # new_row['collection_id'] = '81342586470004641'  # Leave collection_id as-is
+            new_row['collection_id'] = '81342586470004641'  # Self-referential row has collection_id
             new_row['dc:type'] = 'Dataset'  # CSV file is a dataset
             
             # Use the sanitized temp CSV filename for both dc:title and file_name_1
