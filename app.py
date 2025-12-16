@@ -251,6 +251,16 @@ class MDIApplication:
         if AboutView.restore_session(page):
             self.logger.info("Restored preserved session data")
         
+        # Set window icon first
+        import os
+        icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "assets", "favicon-256x256.png"))
+        self.logger.info(f"Setting window icon to: {icon_path}")
+        if os.path.exists(icon_path):
+            page.window.icon = icon_path
+            self.logger.info("Window icon set successfully")
+        else:
+            self.logger.warning(f"Icon file not found at: {icon_path}")
+        
         # Set window dimensions
         page.window.width = 1000
         page.window.height = window_height
@@ -303,4 +313,4 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
-    ft.app(target=main)
+    ft.app(target=main, assets_dir="assets")
