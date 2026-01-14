@@ -4,6 +4,7 @@ CSV Generator view for creating CSV rows from selected files.
 import os
 import json
 import csv
+import re
 import flet as ft
 import pandas as pd
 from datetime import datetime
@@ -43,6 +44,8 @@ class StorageView(BaseView):
         """Generate CSV rows from selected file paths."""
         # Get selected file paths from session
         file_paths = self.page.session.get("selected_file_paths") or []
+        temp_file_info = self.page.session.get("temp_file_info") or []
+        temp_objs_dir = self.page.session.get("temp_objs_directory")
         
         if not file_paths:
             self.show_snack("No files selected. Please use File Selector first.", is_error=True)
@@ -54,27 +57,226 @@ class StorageView(BaseView):
             self.show_snack("Failed to load CSV headings", is_error=True)
             return
         
-        # Generate rows
-        self.generated_csv_data = []
+        # First pass: Detect compound objects by grouping files with _<integer> pattern
+        compound_groups = {}
+        standalone_files = []
+        files_with_basename = {}  # Track files that might be implicit part 1
         
         for file_path in file_paths:
+            filename = os.path.basename(file_path)
+            name_without_ext = os.path.splitext(filename)[0]
+            
+            # Check if filename ends with _<integer> or <space><integer>
+            match = re.match(r'^(.+)[_ ](\d+)$', name_without_ext)
+            if match:
+                base_name = match.group(1)
+                part_number = int(match.group(2))
+                
+                if base_name not in compound_groups:
+                    compound_groups[base_name] = []
+                compound_groups[base_name].append((part_number, file_path))
+            else:
+                # This might be a standalone file OR an implicit part 1
+                # Store it temporarily to check later
+                files_with_basename[name_without_ext] = file_path
+        
+        # Second pass: Check if any basename files have corresponding _2, _3, etc.
+        # If so, treat the basename file as part 1 of a compound
+        for basename, base_file_path in files_with_basename.items():
+            if basename in compound_groups:
+                # This basename has numbered parts, so this is part 1
+                compound_groups[basename].insert(0, (1, base_file_path))
+                self.logger.info(f"Detected implicit part 1 for compound '{basename}': {os.path.basename(base_file_path)}")
+            else:
+                # No numbered parts found, treat as standalone
+                standalone_files.append(base_file_path)
+        
+        # Sort compound groups by part number
+        for base_name in compound_groups:
+            compound_groups[base_name].sort(key=lambda x: x[0])
+        
+        # Generate rows
+        self.generated_csv_data = []
+        updated_temp_file_info = []
+        file_idx = 0
+        
+        # Process compound objects first
+        for base_name, parts in compound_groups.items():
+            if len(parts) >= 2:  # Valid compound object (minimum 2 children)
+                self.logger.info(f"Detected compound object '{base_name}' with {len(parts)} parts")
+                
+                # Generate parent row
+                parent_row = {heading: "" for heading in headings}
+                parent_unique_id = utils.generate_unique_id(self.page)
+                
+                # Extract numeric portion for Handle URL
+                numeric_part = parent_unique_id.split('_')[-1] if '_' in parent_unique_id else parent_unique_id
+                
+                if 'originating_system_id' in parent_row:
+                    parent_row['originating_system_id'] = parent_unique_id
+                if 'group_id' in parent_row:
+                    parent_row['group_id'] = parent_unique_id
+                if 'dc:identifier' in parent_row:
+                    parent_row['dc:identifier'] = f"http://hdl.handle.net/11084/{numeric_part}"
+                if 'dc:title' in parent_row:
+                    parent_row['dc:title'] = base_name
+                if 'dc:type' in parent_row:
+                    parent_row['dc:type'] = "compound"
+                if 'compoundrelationship' in parent_row:
+                    parent_row['compoundrelationship'] = f"parent:{base_name}"
+                
+                # Build Table of Contents from children
+                toc_entries = []
+                
+                # Process child rows
+                for part_num, file_path in parts:
+                    child_row = {heading: "" for heading in headings}
+                    
+                    filename = os.path.basename(file_path)
+                    name_without_ext = os.path.splitext(filename)[0]
+                    file_ext = os.path.splitext(filename)[1]
+                    
+                    # Generate unique ID for child
+                    child_unique_id = utils.generate_unique_id(self.page)
+                    child_numeric_part = child_unique_id.split('_')[-1] if '_' in child_unique_id else child_unique_id
+                    
+                    # Create new filename with dg_* convention
+                    dg_filename = f"{child_unique_id}{file_ext}"
+                    
+                    # Set child fields
+                    if 'file_name_1' in child_row:
+                        child_row['file_name_1'] = dg_filename
+                    if 'originating_system_id' in child_row:
+                        child_row['originating_system_id'] = child_unique_id
+                    if 'group_id' in child_row:
+                        child_row['group_id'] = parent_unique_id
+                    if 'dc:identifier' in child_row:
+                        child_row['dc:identifier'] = f"http://hdl.handle.net/11084/{child_numeric_part}"
+                    if 'dc:title' in child_row:
+                        child_title = f"{base_name} - Part {part_num}"
+                        child_row['dc:title'] = child_title
+                        toc_entries.append(child_title)
+                    if 'compoundrelationship' in child_row:
+                        child_row['compoundrelationship'] = f"child:part{part_num}"
+                    if 'rep_label' in child_row:
+                        child_row['rep_label'] = child_row.get('dc:title', '')
+                    if 'rep_public_note' in child_row:
+                        child_row['rep_public_note'] = child_row.get('dc:type', '')
+                    
+                    # Rename temp file
+                    if temp_objs_dir and os.path.exists(temp_objs_dir):
+                        try:
+                            old_temp_path = file_path
+                            new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                            
+                            if os.path.exists(old_temp_path) and old_temp_path != new_temp_path:
+                                os.rename(old_temp_path, new_temp_path)
+                                self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {dg_filename}")
+                                
+                                if file_idx < len(temp_file_info):
+                                    info = temp_file_info[file_idx].copy()
+                                    info['temp_path'] = new_temp_path
+                                    info['sanitized_filename'] = dg_filename
+                                    updated_temp_file_info.append(info)
+                                else:
+                                    updated_temp_file_info.append({
+                                        'original_path': file_path,
+                                        'original_filename': filename,
+                                        'temp_path': new_temp_path,
+                                        'sanitized_filename': dg_filename
+                                    })
+                        except Exception as rename_err:
+                            self.logger.error(f"Failed to rename temp file {filename}: {rename_err}")
+                    
+                    file_idx += 1
+                    self.generated_csv_data.append(child_row)
+                
+                # Set parent's Table of Contents
+                if 'dcterms:tableOfContents' in parent_row and toc_entries:
+                    parent_row['dcterms:tableOfContents'] = " | ".join(toc_entries)
+                
+                # Insert parent at the beginning of the compound group
+                # Find the index where the first child was added
+                insert_idx = len(self.generated_csv_data) - len(parts)
+                self.generated_csv_data.insert(insert_idx, parent_row)
+            else:
+                # Treat single-part as standalone
+                standalone_files.extend([part[1] for part in parts])
+        
+        # Process standalone files
+        for file_path in standalone_files:
             # Create a row dictionary with all headings as keys
             row = {heading: "" for heading in headings}
             
             # Populate basic fields from filename
             filename = os.path.basename(file_path)
             name_without_ext = os.path.splitext(filename)[0]
+            file_ext = os.path.splitext(filename)[1]
             
-            # Set file_name_1 to the filename
+            # Generate unique ID for this file
+            unique_id = utils.generate_unique_id(self.page)
+            
+            # Extract numeric portion for Handle URL
+            numeric_part = unique_id.split('_')[-1] if '_' in unique_id else unique_id
+            
+            # Create new filename with dg_* convention
+            dg_filename = f"{unique_id}{file_ext}"
+            
+            # Set file_name_1 to the dg_* filename
             if 'file_name_1' in row:
-                row['file_name_1'] = filename
+                row['file_name_1'] = dg_filename
             
-            # Set dc:title to filename without extension
+            # Set dc:identifier Handle URL
+            if 'dc:identifier' in row:
+                row['dc:identifier'] = f"http://hdl.handle.net/11084/{numeric_part}"
+            
+            # Set dc:title to original filename without extension
             if 'dc:title' in row:
                 row['dc:title'] = name_without_ext
             
+            # Rename temp file if we have temp directory info
+            if temp_objs_dir and os.path.exists(temp_objs_dir):
+                try:
+                    old_temp_path = file_path
+                    new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                    
+                    # Only rename if the file exists and new name is different
+                    if os.path.exists(old_temp_path) and old_temp_path != new_temp_path:
+                        os.rename(old_temp_path, new_temp_path)
+                        self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {dg_filename}")
+                        
+                        # Update temp_file_info if available
+                        if file_idx < len(temp_file_info):
+                            info = temp_file_info[file_idx].copy()
+                            info['temp_path'] = new_temp_path
+                            info['sanitized_filename'] = dg_filename
+                            updated_temp_file_info.append(info)
+                        else:
+                            # Create new info entry
+                            updated_temp_file_info.append({
+                                'original_path': file_path,
+                                'original_filename': filename,
+                                'temp_path': new_temp_path,
+                                'sanitized_filename': dg_filename
+                            })
+                except Exception as rename_err:
+                    self.logger.error(f"Failed to rename temp file {filename}: {rename_err}")
+                    # Keep original temp file info if rename fails
+                    if file_idx < len(temp_file_info):
+                        updated_temp_file_info.append(temp_file_info[file_idx])
+            
+            file_idx += 1
+            
             # Add to generated data
             self.generated_csv_data.append(row)
+        
+        # Update session with new temp file info
+        if updated_temp_file_info:
+            self.page.session.set("temp_file_info", updated_temp_file_info)
+            # Update temp_files list with new paths
+            new_temp_paths = [info['temp_path'] for info in updated_temp_file_info]
+            self.page.session.set("temp_files", new_temp_paths)
+            self.page.session.set("selected_file_paths", new_temp_paths)
         
         self.logger.info(f"Generated {len(self.generated_csv_data)} CSV rows")
         

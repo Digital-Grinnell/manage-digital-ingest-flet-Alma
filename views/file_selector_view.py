@@ -458,9 +458,9 @@ class FilePickerSelectorView(FileSelectorView):
             
             # Open file picker with multiple selection enabled and file type filters
             file_picker.pick_files(
-                dialog_title="Select Image or PDF Files",
+                dialog_title="Select Image, PDF, or Audio Files",
                 allow_multiple=True,
-                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "pdf"],
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "pdf", "wav"],
                 initial_directory=initial_dir
             )
         

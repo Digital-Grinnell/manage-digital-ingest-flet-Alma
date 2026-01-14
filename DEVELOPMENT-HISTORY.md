@@ -12,6 +12,119 @@ This document chronicles the development of the Manage Digital Ingest applicatio
 
 ---
 
+## Recent Updates
+
+### CSV Generation with Handle URLs and Compound Object Detection
+
+**Date**: January 2026
+
+**Change**: Enhanced CSV generation to automatically create Handle URLs and detect compound objects.
+
+**Details**:
+- Modified `generate_csv_rows()` in `storage_view.py` to:
+  - **Handle URL Generation**: Automatically generate `dc:identifier` Handle URLs from unique IDs
+    - Format: `http://hdl.handle.net/11084/<numeric_part>`
+    - Extracts numeric portion from dg_* ID (e.g., `dg_1737072345` → `1737072345`)
+  - **Compound Object Detection**: Automatically detect and process compound objects
+    - Detects files with pattern `basename_<integer>` or `basename <integer>` (space or underscore separator)
+      - Examples: `album_1.jpg`, `album 2.jpg`, `album_3.jpg` (all valid)
+    - **Handles implicit part 1**: If `basename` exists alongside `basename_2`, `basename 2`, etc., treats `basename` as part 1
+      - Example: `Nick_Nonas.jpg` and `Nick_Nonas_2.jpg` → compound with 2 parts
+      - Example: `Nick Nonas.jpg` and `Nick Nonas 2.jpg` → compound with 2 parts
+    - Groups files by basename and sorts by part number
+    - Requires minimum 2 parts to create compound object
+  - **Compound Metadata Generation**:
+    - Creates parent row with `compoundrelationship: "parent:<basename>"`
+    - Sets parent `dc:type` to "compound"
+    - Generates child rows with `compoundrelationship: "child:part<N>"`
+    - Links all children to parent via `group_id`
+    - Builds `dcterms:tableOfContents` from child titles
+    - Sets child `rep_label` and `rep_public_note` fields
+  - **Smart Naming**: Child titles formatted as "basename - Part N"
+  
+**Files Modified**:
+- `views/storage_view.py`: Updated `generate_csv_rows()` method with compound detection and Handle URL generation
+
+**Example - Standalone File**:
+- Input: `photo.jpg`
+- Generated `file_name_1`: `dg_1737072345.jpg`
+- Generated `dc:identifier`: `http://hdl.handle.net/11084/1737072345`
+- Generated `dc:title`: `photo`
+
+**Example - Compound Object (Explicit Numbering)**:
+- Input files: `album_1.jpg`, `album_2.jpg`, `album_3.jpg`
+- Parent row created with 3 children
+- TOC: `album - Part 1 | album - Part 2 | album - Part 3`
+
+**Example - Compound Object (Implicit Part 1)**:
+- Input files: `Nick_Nonas.jpg`, `Nick_Nonas_2.jpg`
+- `Nick_Nonas.jpg` treated as part 1 (implicit)
+- `Nick_Nonas_2.jpg` treated as part 2 (explicit)
+- Parent row created with 2 children
+- TOC: `Nick_Nonas - Part 1 | Nick_Nonas - Part 2`
+
+**Full Compound Example**:
+- Input files: `album_1.jpg`, `album_2.jpg`, `album_3.jpg`
+- Parent row created:
+  - `originating_system_id`: `dg_1737072350`
+  - `group_id`: `dg_1737072350`
+  - `dc:identifier`: `http://hdl.handle.net/11084/1737072350`
+  - `dc:title`: `album`
+  - `dc:type`: `compound`
+  - `compoundrelationship`: `parent:album`
+  - `dcterms:tableOfContents`: `album - Part 1 | album - Part 2 | album - Part 3`
+- Child rows created (3):
+  - Each with unique `originating_system_id` and `dc:identifier`
+  - All share parent's `group_id`: `dg_1737072350`
+  - `dc:title`: `album - Part 1`, `album - Part 2`, `album - Part 3`
+  - `compoundrelationship`: `child:part1`, `child:part2`, `child:part3`
+  - Files renamed: `dg_1737072351.jpg`, `dg_1737072352.jpg`, `dg_1737072353.jpg`
+
+---
+
+### CSV Generation with dg_* Naming Convention
+
+**Date**: January 2026
+
+**Change**: Updated CSV generation to use dg_* naming convention for file_name_1 field and temporary files.
+
+**Details**:
+- Modified `generate_csv_rows()` in `storage_view.py` to:
+  - Generate unique IDs using `utils.generate_unique_id()` for each file
+  - Set `file_name_1` field to `dg_<timestamp><extension>` format
+  - Preserve original filename (without extension) in `dc:title` field
+  - Automatically rename temporary files in OBJS/ directory to match dg_* convention
+  - Update session temp_file_info with new filenames
+- Ensures consistency between CSV metadata and actual file storage
+- Maintains Handle URL generation compatibility with dg_* format
+
+**Files Modified**:
+- `views/storage_view.py`: Updated `generate_csv_rows()` method to implement dg_* naming
+
+**Example**:
+- Original file: `photo_001.jpg`
+- Generated `file_name_1`: `dg_1737072345.jpg`
+- Generated `dc:title`: `photo_001`
+- Temp file renamed: `OBJS/dg_1737072345.jpg`
+
+---
+
+### Audio File Support (WAV)
+
+**Date**: January 2026
+
+**Change**: Added .wav file support to FilePicker allowed extensions.
+
+**Details**:
+- Updated `file_selector_view.py` to include "wav" in `allowed_extensions` list
+- Modified dialog title to reflect support for "Image, PDF, or Audio Files"
+- Allows users to select .wav audio files alongside existing image and PDF formats
+
+**Files Modified**:
+- `views/file_selector_view.py`: Added "wav" to allowed_extensions in FilePickerSelectorView
+
+---
+
 ## Core Feature Development
 
 ### CSV Processing and Validation
