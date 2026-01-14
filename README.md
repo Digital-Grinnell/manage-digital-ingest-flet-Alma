@@ -47,8 +47,12 @@ This Alma-specific version of Manage Digital Ingest helps you:
 - **Alma Workflow Only**: Configured specifically for Alma Digital workflows
 - **Fuzzy Filename Matching**: Automatically matches images to CSV metadata entries with numeric-only difference penalty
 - **CSV Metadata Generator**: Create initial CSV rows from selected files with Alma-D structure
+- **Automatic Compound Detection**: Detects multi-part objects (e.g., `album_1.jpg`, `album 2.jpg`) and generates parent/child metadata
+- **Handle URL Generation**: Automatically creates dc:identifier Handle URLs for all objects
 - **CSV Metadata Merge**: Upload existing metadata CSV and merge it into generated rows
+- **values.csv Creation**: Automatically generates upload-ready values.csv with proper formatting
 - **Alma Derivative Generation**: Creates thumbnails (200x200) with `.jpg.clientThumb` extension
+- **Audio File Support**: Converts .wav to high-quality .mp3, generates audio thumbnails
 - **Compound Object Support**: Handles parent/child relationships with automatic TOC generation
 - **Collection ID Management**: Populates collection_id fields for Alma
 - **AWS S3 Integration**: Generates upload scripts for Alma S3 buckets

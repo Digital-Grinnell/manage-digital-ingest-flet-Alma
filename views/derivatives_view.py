@@ -7,6 +7,7 @@ This module contains the DerivativesView class for creating file derivatives.
 import flet as ft
 from views.base_view import BaseView
 import os
+import shutil
 from thumbnail import generate_thumbnail, generate_pdf_thumbnail
 
 
@@ -21,7 +22,108 @@ class DerivativesView(BaseView):
         self.log_view = None
         self.processing = False
         self.cancel_processing = False
+    audio_derivatives(self, file_path, temp_base_dir, root):
+        """
+        Create derivatives for audio files (.wav):
+        1. Convert .wav to high-quality .mp3 in OBJS directory
+        2. Create thumbnail from gc_media_TN.jpeg asset
+        
+        Args:
+            file_path: Path to the source .wav file
+            temp_base_dir: Base temp directory
+            root: Root filename (without extension)
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        try:
+            import subprocess
+            
+            # Create OBJS directory if needed
+            objs_dir = os.path.join(temp_base_dir, 'OBJS')
+            os.makedirs(objs_dir, exist_ok=True)
+            
+            # Create TN directory if needed
+            tn_dir = os.path.join(temp_base_dir, 'TN')
+            os.makedirs(tn_dir, exist_ok=True)
+            
+            # 1. Convert .wav to high-quality .mp3 in OBJS
+            mp3_filename = f"{root}.mp3"
+            mp3_path = os.path.join(objs_dir, mp3_filename)
+            
+            # Use ffmpeg for high-quality conversion
+            # -q:a 0 means highest quality VBR MP3
+            ffmpeg_cmd = [
+                'ffmpeg',
+                '-i', file_path,
+                '-q:a', '0',  # Highest quality VBR
+                '-map', 'a',  # Map audio stream
+                '-y',  # Overwrite output file
+                mp3_path
+            ]
+            
+            self.logger.info(f"Converting .wav to .mp3: {ffmpeg_cmd}")
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                error_msg = f"FFmpeg conversion failed: {result.stderr}"
+                self.logger.error(error_msg)
+                return False, error_msg
+            
+            self.logger.info(f"Created MP3: {mp3_path}")
+            
+            # 2. Copy gc_media_TN.jpeg as thumbnail
+            assets_dir = os.path.join(os.getcwd(), 'assets')
+            source_thumbnail = os.path.join(assets_dir, 'gc_media_TN.jpeg')
+            
+            if not os.path.exists(source_thumbnail):
+                error_msg = f"Thumbnail template not found: {source_thumbnail}"
+                self.logger.error(error_msg)
+                return False, error_msg
+            
+            # Create thumbnail with Alma naming convention
+            thumbnail_filename = f"{root}.jpg.clientThumb"
+            thumbnail_path = os.path.join(tn_dir, thumbnail_filename)
+            
+            # Resize the source thumbnail to 200x200 for Alma
+            from PIL import Image
+            with Image.open(source_thumbnail) as img:
+                # Resize to 200x200
+                img_resized = img.resize((200, 200), Image.Resampling.LANCZOS)
+                # Convert to RGB if needed (in case of RGBA)
+                if img_resized.mode != 'RGB':
+                  if ext.lower() == '.wav':
+                    # Handle audio files - convert to MP3 and create thumbnail
+                    success, message = self.create_audio_derivatives(file_path, temp_base_dir, root)
+                    if success:
+                        self.logger.info(f"Created audio derivatives: {message}")
+                        return True, message
+                    else:
+                        self.logger.error(f"Failed to create audio derivatives: {message}")
+                        return False, message
+                el  img_resized = img_resized.convert('RGB')
+                # Save as JPEG
+                img_resized.save(thumbnail_path, 'JPEG', quality=85)
+            
+            self.logger.info(f"Created audio thumbnail: {thumbnail_path}")
+            
+            return True, f"Created MP3: {mp3_filename}, Thumbnail: {thumbnail_filename}"
+            
+        except FileNotFoundError as e:
+            if 'ffmpeg' in str(e):
+                error_msg = "FFmpeg not found. Please install FFmpeg to process audio files."
+                self.logger.error(error_msg)
+                return False, error_msg
+            else:
+                error_msg = f"File not found: {str(e)}"
+                self.logger.error(error_msg)
+                return False, error_msg
+        except Exception as e:
+            error_msg = f"Error creating audio derivatives: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
     
+    def create_
     def create_single_derivative(self, file_path, mode, derivative_type='thumbnail'):
         """
         Create a single derivative for a file based on mode and type.

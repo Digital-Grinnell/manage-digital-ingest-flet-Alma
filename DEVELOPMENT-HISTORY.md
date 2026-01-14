@@ -14,7 +14,83 @@ This document chronicles the development of the Manage Digital Ingest applicatio
 
 ## Recent Updates
 
-### CSV Generation with Handle URLs and Compound Object Detection
+### Audio Derivatives Generation
+
+**Date**: January 2026
+
+**Change**: Added audio file processing to the derivatives generation workflow.
+
+**Details**:
+- Modified `derivatives_view.py` to handle .wav audio files:
+  - **MP3 Conversion**: Converts .wav files to high-quality .mp3 format
+    - Uses FFmpeg with `-q:a 0` setting (highest quality VBR encoding)
+    - Stores converted .mp3 files in OBJS directory
+    - Preserves original filename with .mp3 extension
+  - **Audio Thumbnail**: Creates visual thumbnail for audio files
+    - Sources from `assets/gc_media_TN.jpeg` template
+    - Resizes to 200x200 pixels for Alma compatibility
+    - Saves with `.jpg.clientThumb` extension in TN directory
+- Added `create_audio_derivatives()` method with FFmpeg integration
+- Requires FFmpeg installation for audio conversion
+
+**Files Modified**:
+- `views/derivatives_view.py`: Added audio processing support
+
+**Dependencies**:
+- Requires FFmpeg to be installed and available in system PATH
+- Uses Pillow (PIL) for thumbnail resizing
+
+**Example**:
+- Input: `interview.wav` in OBJS/
+- Generated:
+  - `OBJS/interview.mp3` (high-quality conversion)
+  - `TN/interview.jpg.clientThumb` (200x200 audio thumbnail)
+
+---
+
+### CSV Generator Creates values.csv
+
+**Date**: January 2026
+
+**Change**: CSV Generator now automatically creates values.csv file in the temp directory.
+
+**Details**:
+- Modified `generate_csv_rows()` in `storage_view.py` to call `save_values_csv()` after generating CSV rows
+- Added `save_values_csv()` method to StorageView class:
+  - Creates values.csv in the temp directory (alongside OBJS/, TN/, SMALL/)
+  - Blanks out `collection_id` column for all rows except the last one (self-referential CSV row)
+  - Uses minimal quoting (quoting=0) for proper CSV formatting
+  - No comment rows (CSV Generator doesn't create comment rows)
+- Ensures values.csv is ready for Alma Digital upload without additional processing
+
+**Files Modified**:
+- `views/storage_view.py`: Added `save_values_csv()` method and integrated into CSV generation workflow
+
+**Purpose**:
+- values.csv is the file used for Alma Digital upload
+- Main CSV file can contain comments and full collection_id values for reference
+- values.csv is upload-ready with collection_id properly formatted
+
+---
+
+### Flexible Compound Object Separator
+
+**Date**: January 2026
+
+**Change**: Compound object detection now accepts both underscore and space as separators.
+
+**Details**:
+- Updated regex pattern from `r'^(.+)_(\d+)$'` to `r'^(.+)[_ ](\d+)$'`
+- Now detects compound objects with either separator:
+  - `album_1.jpg`, `album_2.jpg` (underscore)
+  - `album 1.jpg`, `album 2.jpg` (space)
+  - Can even mix: `album_1.jpg`, `album 2.jpg` (both recognized)
+
+**Files Modified**:
+- `views/storage_view.py`: Updated compound detection regex
+- `DEVELOPMENT-HISTORY.md`: Updated documentation with examples
+
+---
 
 **Date**: January 2026
 

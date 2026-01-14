@@ -283,6 +283,9 @@ class StorageView(BaseView):
         # Save to persistent.json
         self.save_generated_csv()
         
+        # Create values.csv in temp directory
+        self.save_values_csv()
+        
         # Update display
         self.display_csv_data()
         
@@ -312,6 +315,50 @@ class StorageView(BaseView):
             self.page.session.set("generated_csv_rows", self.generated_csv_data)
             self.logger.info(f"Saved {len(self.generated_csv_data)} rows to session storage")
         except Exception as e:
+            self.logger.error(f"Failed to save generated CSV data: {e}")
+    
+    def save_values_csv(self):
+        """
+        Save a values.csv file in the temp directory.
+        This file has no comment rows and collection_id blanked (except last row).
+        """
+        try:
+            # Get temp directory from session
+            temp_dir = self.page.session.get("temp_directory")
+            
+            if not temp_dir or not os.path.exists(temp_dir):
+                self.logger.warning("No temp directory available, skipping values.csv creation")
+                return False
+            
+            if not self.generated_csv_data:
+                self.logger.warning("No CSV data to save to values.csv")
+                return False
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(self.generated_csv_data)
+            
+            # Blank out collection_id column for all rows EXCEPT the last one (self-referential CSV row)
+            if 'collection_id' in df.columns and len(df) > 0:
+                # Store the last row's collection_id value
+                last_collection_id = df.iloc[-1]['collection_id'] if pd.notna(df.iloc[-1]['collection_id']) else ''
+                # Blank out all collection_id values
+                df['collection_id'] = ''
+                # Restore the last row's collection_id
+                df.iloc[-1, df.columns.get_loc('collection_id')] = last_collection_id
+                self.logger.info(f"Blanked out collection_id column in values.csv (except last row: {last_collection_id})")
+            
+            # Save values.csv to temp directory
+            values_csv_path = os.path.join(temp_dir, "values.csv")
+            df.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
+            
+            self.logger.info(f"Saved values.csv to: {values_csv_path} ({len(df)} rows)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save values.csv: {e}")
+            return False
+    
+    def except Exception as e:
             self.logger.error(f"Failed to save generated CSV data: {e}")
     
     def load_generated_csv(self):

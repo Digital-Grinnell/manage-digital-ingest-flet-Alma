@@ -27,12 +27,16 @@ A comprehensive guide for using the Manage Digital Ingest application to prepare
 ### Key Features
 
 - **Fuzzy Filename Matching**: Automatically matches images to CSV metadata entries with configurable similarity threshold
-- **Derivative Generation**: Creates TN (thumbnails) and SMALL versions of images
-- **CSV Management**: Updates metadata with sanitized filenames and unique IDs
+- **Automatic Compound Detection**: Detects multi-part objects and generates parent/child metadata structure
+- **Handle URL Generation**: Automatically creates dc:identifier Handle URLs for all digital objects
+- **Derivative Generation**: Creates TN (thumbnails) and audio derivatives (.wav to .mp3 conversion)
+- **CSV Management**: Updates metadata with dg_* identifiers and unique Handle URLs
+- **values.csv Creation**: Automatically generates upload-ready values.csv file
 - **Compound Object Support**: Handles parent/child relationships for multi-page documents and collections
 - **Session Preservation**: Save your work and resume later
 - **AWS S3 Integration**: Generate upload scripts for Alma ingest
 - **Comment Row Support**: CSV rows starting with # are preserved but ignored in processing
+- **Audio Support**: Accepts .wav files, converts to .mp3, generates audio thumbnails
 
 ---
 
@@ -145,9 +149,18 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 2. Verify selected files count is shown
 3. Click **"Generate CSV Rows"**
    - Creates one CSV row per selected file
-   - Populates `file_name_1` with filename
-   - Populates `dc:title` with filename (without extension)
-   - All other fields remain blank for manual editing
+   - Automatically generates unique dg_* identifiers for each file
+   - Populates `file_name_1` with dg_* filename (e.g., `dg_1737072345.jpg`)
+   - Populates `dc:identifier` with Handle URL (e.g., `http://hdl.handle.net/11084/1737072345`)
+   - Populates `dc:title` with original filename (without extension)
+   - **Compound Object Detection**: Automatically detects multi-part objects
+     - Files like `album_1.jpg`, `album_2.jpg` become compound object with parent + children
+     - Files like `Nick Nonas.jpg`, `Nick Nonas 2.jpg` detected as 2-part compound
+     - Supports underscore or space separator before part number
+     - Creates parent row with `dc:type: compound` and Table of Contents
+     - Creates child rows linked via `group_id`
+   - Renames temporary files in OBJS/ to match dg_* naming
+   - **Automatically creates values.csv** in temp directory (ready for Alma upload)
    - Uses Alma-D CSV structure (66+ columns)
 4. Review generated data in the table view
 5. **Optional: Merge Existing Metadata**
@@ -167,6 +180,11 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 
 **Tip**: The merge feature is useful when you have partial metadata (descriptions, subjects, dates) in one CSV and want to combine it with newly generated file information.
 
+**Compound Object Examples**:
+- `document_1.pdf`, `document_2.pdf`, `document_3.pdf` → 1 parent + 3 children
+- `Photo Album.jpg`, `Photo Album 2.jpg` → 1 parent + 2 children (implicit part 1)
+- `interview_1.wav`, `interview_2.wav` → 1 parent + 2 children
+
 ### Step 4: Derivatives - Generate Thumbnails
 
 #### 4.1 Generate TN Derivatives
@@ -175,6 +193,10 @@ If you don't have a CSV file yet, you can generate one from your selected files:
    - Creates thumbnails (200px max dimension) in `/TN` subdirectory
    - Uses Pillow for image processing
    - Uses PyMuPDF for PDF processing
+   - **Audio Files (.wav)**:
+     - Converts .wav to high-quality .mp3 (stored in OBJS/)
+     - Creates 200x200 thumbnail using gc_media_TN.jpeg template
+     - Requires FFmpeg installation
    - Maintains aspect ratio
    - Preserves image quality
 3. Review generation statistics
@@ -343,7 +365,10 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 ### CSV Generator
 - **Generate Metadata**: Create initial CSV rows from selected files
 - **Alma-D Structure**: Uses verified 66+ column Alma Digital CSV format
-- **Auto-populate**: Fills `file_name_1` and `dc:title` fields automatically
+- **Auto-populate**: Fills `file_name_1` with dg_* identifier, `dc:title` with original filename, `dc:identifier` with Handle URL
+- **Compound Detection**: Automatically detects multi-part objects (e.g., `album_1.jpg`, `album 2.jpg`) and creates parent/child structure
+- **Handle URLs**: Automatically generates `dc:identifier` Handle URLs from unique IDs
+- **values.csv**: Automatically creates upload-ready values.csv in temp directory
 - **Upload Metadata CSV**: Load existing CSV file with descriptive metadata
 - **Merge Metadata**: Combine uploaded metadata with generated rows by matching `file_name_1`
 - **Preview Table**: View generated data before export
@@ -354,11 +379,11 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 
 ### Derivatives
 - **TN Generation**: Create thumbnail images (200px max)
-- **SMALL Generation**: Create preview images (800px max)
+- **Audio Processing**: Converts .wav to high-quality .mp3, creates audio thumbnails
 - **Progress Display**: Shows generation status and file counts
 - **File Listing**: Lists all generated derivative files
 - **Error Reporting**: Displays any generation failures
-- **Format Support**: Handles images (JPG, PNG, TIF) and PDFs
+- **Format Support**: Handles images (JPG, PNG, TIF), PDFs, and audio (.wav)
 
 ### Update CSV
 - **Before View**: Display current CSV data
