@@ -416,7 +416,11 @@ class StorageView(BaseView):
         self.save_generated_csv()
         
         # Save generated CSV to temp directory
-        self.save_generated_csv_to_temp()
+        csv_filename = self.save_generated_csv_to_temp()
+        
+        # Append a new row for the CSV file itself (before creating values.csv)
+        if csv_filename:
+            self.append_csv_metadata_row(csv_filename)
         
         # Create values.csv in temp directory
         self.save_values_csv()
@@ -453,18 +457,21 @@ class StorageView(BaseView):
             self.logger.error(f"Failed to save generated CSV data: {e}")
     
     def save_generated_csv_to_temp(self):
-        """Save the generated CSV file to the temp directory with a timestamped name."""
+        """
+        Save the generated CSV file to the temp directory with a timestamped name.
+        Returns the CSV filename if successful, None otherwise.
+        """
         try:
             # Get temp directory from session
             temp_dir = self.page.session.get("temp_directory")
             
             if not temp_dir or not os.path.exists(temp_dir):
                 self.logger.warning("No temp directory available, skipping CSV file creation")
-                return False
+                return None
             
             if not self.generated_csv_data:
                 self.logger.warning("No CSV data to save")
-                return False
+                return None
             
             # Convert to DataFrame
             df = pd.DataFrame(self.generated_csv_data)
@@ -482,11 +489,61 @@ class StorageView(BaseView):
             self.page.session.set("generated_csv_filename", csv_filename)
             
             self.logger.info(f"Saved generated CSV to: {csv_path} ({len(df)} rows)")
-            return True
+            return csv_filename
             
         except Exception as e:
             self.logger.error(f"Failed to save generated CSV to temp: {e}")
-            return False
+            return None
+    
+    def append_csv_metadata_row(self, csv_filename):
+        """
+        Append a new row to the generated CSV data for the CSV file itself.
+        This self-referential row is required for Alma Digital upload.
+        
+        Args:
+            csv_filename: The name of the generated CSV file
+        """
+        try:
+            # Only append in Alma mode
+            current_mode = self.page.session.get("mode", "Alma")
+            if current_mode != "Alma":
+                self.logger.info("Skipping CSV metadata row append (not in Alma mode)")
+                return
+            
+            # Generate unique ID
+            unique_id = utils.generate_unique_id(self.page)
+            
+            # Extract numeric portion for Handle URL
+            numeric_part = unique_id.split('_')[-1] if '_' in unique_id else unique_id
+            handle_url = f"http://hdl.handle.net/11084/{numeric_part}"
+            
+            # Get CSV headings to create a proper row
+            headings = self.load_csv_headings()
+            if not headings:
+                self.logger.error("Cannot append CSV metadata row: failed to load headings")
+                return
+            
+            # Create new row with all empty values first
+            new_row = {col: '' for col in headings}
+            
+            # Populate specific columns
+            new_row['originating_system_id'] = unique_id
+            new_row['dc:identifier'] = handle_url  # Use Handle URL format
+            new_row['collection_id'] = '81342586470004641'  # Self-referential row has collection_id
+            new_row['dc:type'] = 'Dataset'  # CSV file is a dataset
+            new_row['dc:title'] = csv_filename
+            new_row['file_name_1'] = csv_filename
+            
+            # Append the new row to generated_csv_data
+            self.generated_csv_data.append(new_row)
+            
+            self.logger.info(f"Appended CSV metadata row with ID: {unique_id}, filename: {csv_filename}")
+            
+            # Update session storage
+            self.page.session.set("generated_csv_rows", self.generated_csv_data)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to append CSV metadata row: {e}")
     
     def save_values_csv(self):
         """
