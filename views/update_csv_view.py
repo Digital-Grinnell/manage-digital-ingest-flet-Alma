@@ -301,6 +301,45 @@ class UpdateCSVView(BaseView):
             else:
                 self.logger.warning(f"Missing data - temp_file_info: {temp_file_info is not None}, csv_filenames_for_matched: {csv_filenames_for_matched is not None}")
             
+            # Step 1.5: Handle .wav audio files - set file_name_1 to .mp3, file_name_2 to .wav, and dc:type to "Sound"
+            if current_mode == "Alma" and temp_file_info:
+                wav_updates = 0
+                for idx, file_info in enumerate(temp_file_info):
+                    is_wav = file_info.get('is_wav', False)
+                    
+                    if is_wav:
+                        # Get the sanitized .wav filename
+                        wav_filename = file_info.get('sanitized_filename', '')
+                        
+                        if wav_filename:
+                            # Find the row with this .wav filename in file_name_1
+                            mask = ((self.csv_data[column_name] == wav_filename) & 
+                                   (~self.csv_data[first_column].str.startswith('#', na=False)))
+                            
+                            if mask.any():
+                                row_idx = self.csv_data[mask].index[0]
+                                
+                                # Get the base name (without extension)
+                                base_name = os.path.splitext(wav_filename)[0]
+                                
+                                # Set file_name_1 to .mp3 (primary representation)
+                                mp3_filename = f"{base_name}.mp3"
+                                self.csv_data.at[row_idx, column_name] = mp3_filename
+                                
+                                # Set file_name_2 to .wav (preservation representation)
+                                if 'file_name_2' in self.csv_data.columns:
+                                    self.csv_data.at[row_idx, 'file_name_2'] = wav_filename
+                                
+                                # Set dc:type to "Sound"
+                                if 'dc:type' in self.csv_data.columns:
+                                    self.csv_data.at[row_idx, 'dc:type'] = 'Sound'
+                                
+                                wav_updates += 1
+                                self.logger.info(f"Updated row {row_idx} for .wav audio: file_name_1={mp3_filename}, file_name_2={wav_filename}, dc:type=Sound")
+                
+                if wav_updates > 0:
+                    self.logger.info(f"Processed {wav_updates} .wav audio file(s) with dual representations")
+            
             # Step 2: Append a new row for the CSV file itself (Alma mode only)
             if current_mode == "Alma":
                 # Generate unique ID

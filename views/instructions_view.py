@@ -31,15 +31,17 @@ class InstructionsView(BaseView):
                 self.show_snack("No temporary directory found. Please select files first.", is_error=True)
                 return
             
-            # Get the temp CSV filename from session
-            temp_csv_filename = self.page.session.get("temp_csv_filename")
+            # Get the CSV filename - prefer generated_csv_filename over temp_csv_filename
+            csv_filename = self.page.session.get("generated_csv_filename")
+            if not csv_filename:
+                csv_filename = self.page.session.get("temp_csv_filename")
             
             # Get profile-id and import-id from input fields
             profile_id = self.profile_id_input.value.strip() if self.profile_id_input and self.profile_id_input.value else ""
             import_id = self.import_id_input.value.strip() if self.import_id_input and self.import_id_input.value else ""
             
             # Generate the script
-            script_content = utils.generate_alma_s3_script(temp_dir, temp_csv_filename)
+            script_content = utils.generate_alma_s3_script(temp_dir, csv_filename)
             
             # Replace placeholders with actual values if provided
             if profile_id and import_id:

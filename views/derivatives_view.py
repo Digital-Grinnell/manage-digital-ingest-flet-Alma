@@ -22,7 +22,8 @@ class DerivativesView(BaseView):
         self.log_view = None
         self.processing = False
         self.cancel_processing = False
-    audio_derivatives(self, file_path, temp_base_dir, root):
+    
+    def create_audio_derivatives(self, file_path, temp_base_dir, root):
         """
         Create derivatives for audio files (.wav):
         1. Convert .wav to high-quality .mp3 in OBJS directory
@@ -39,6 +40,9 @@ class DerivativesView(BaseView):
         try:
             import subprocess
             
+            # Get colors for UI updates
+            colors = self.get_theme_colors()
+            
             # Create OBJS directory if needed
             objs_dir = os.path.join(temp_base_dir, 'OBJS')
             os.makedirs(objs_dir, exist_ok=True)
@@ -51,6 +55,21 @@ class DerivativesView(BaseView):
             mp3_filename = f"{root}.mp3"
             mp3_path = os.path.join(objs_dir, mp3_filename)
             
+            # Get file size for logging
+            try:
+                wav_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                msg = f"  Starting audio conversion: {os.path.basename(file_path)} ({wav_size_mb:.2f} MB)"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                    self.page.update()
+            except:
+                msg = f"  Starting audio conversion: {os.path.basename(file_path)}"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                    self.page.update()
+            
             # Use ffmpeg for high-quality conversion
             # -q:a 0 means highest quality VBR MP3
             ffmpeg_cmd = [
@@ -62,7 +81,12 @@ class DerivativesView(BaseView):
                 mp3_path
             ]
             
-            self.logger.info(f"Converting .wav to .mp3: {ffmpeg_cmd}")
+            msg = "  Converting to high-quality .mp3 (VBR) - this may take a moment for large files..."
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                self.page.update()
+            
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
@@ -70,9 +94,28 @@ class DerivativesView(BaseView):
                 self.logger.error(error_msg)
                 return False, error_msg
             
-            self.logger.info(f"Created MP3: {mp3_path}")
+            # Log success with file size
+            try:
+                mp3_size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
+                msg = f"  ✓ MP3 conversion complete: {mp3_filename} ({mp3_size_mb:.2f} MB)"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.page.update()
+            except:
+                msg = f"  ✓ MP3 conversion complete: {mp3_filename}"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.page.update()
             
             # 2. Copy gc_media_TN.jpeg as thumbnail
+            msg = f"  Creating audio thumbnail for {root}..."
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                self.page.update()
+            
             assets_dir = os.path.join(os.getcwd(), 'assets')
             source_thumbnail = os.path.join(assets_dir, 'gc_media_TN.jpeg')
             
@@ -92,20 +135,15 @@ class DerivativesView(BaseView):
                 img_resized = img.resize((200, 200), Image.Resampling.LANCZOS)
                 # Convert to RGB if needed (in case of RGBA)
                 if img_resized.mode != 'RGB':
-                  if ext.lower() == '.wav':
-                    # Handle audio files - convert to MP3 and create thumbnail
-                    success, message = self.create_audio_derivatives(file_path, temp_base_dir, root)
-                    if success:
-                        self.logger.info(f"Created audio derivatives: {message}")
-                        return True, message
-                    else:
-                        self.logger.error(f"Failed to create audio derivatives: {message}")
-                        return False, message
-                el  img_resized = img_resized.convert('RGB')
+                    img_resized = img_resized.convert('RGB')
                 # Save as JPEG
                 img_resized.save(thumbnail_path, 'JPEG', quality=85)
             
-            self.logger.info(f"Created audio thumbnail: {thumbnail_path}")
+            msg = f"  ✓ Audio thumbnail created: {thumbnail_filename}"
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                self.page.update()
             
             return True, f"Created MP3: {mp3_filename}, Thumbnail: {thumbnail_filename}"
             
@@ -123,7 +161,6 @@ class DerivativesView(BaseView):
             self.logger.error(error_msg)
             return False, error_msg
     
-    def create_
     def create_single_derivative(self, file_path, mode, derivative_type='thumbnail'):
         """
         Create a single derivative for a file based on mode and type.
@@ -193,6 +230,15 @@ class DerivativesView(BaseView):
                         error_msg = f"Failed to create PDF thumbnail: {derivative_path}"
                         self.logger.error(error_msg)
                         return False, error_msg
+                elif ext.lower() == '.wav':
+                    # Handle audio files - convert to MP3 and create thumbnail
+                    success, message = self.create_audio_derivatives(file_path, temp_base_dir, root)
+                    if success:
+                        self.logger.info(f"Created audio derivatives: {message}")
+                        return True, message
+                    else:
+                        self.logger.error(f"Failed to create audio derivatives: {message}")
+                        return False, message
                 else:
                     error_msg = f"Unsupported file type for Alma: {ext}"
                     self.logger.error(error_msg)
@@ -432,9 +478,11 @@ class DerivativesView(BaseView):
         status_info_controls.extend([
             ft.Container(height=5),
             ft.Text("Derivative Types:", size=14, weight=ft.FontWeight.BOLD, color=colors['container_text']),
-            ft.Text("• Alma: .clientThumb (200x200, preserves extension)", 
+            ft.Text("• Images/PDFs: .clientThumb (200x200, preserves extension)", 
                    size=12, color=colors['container_text']),
-            ft.Text("• Alma: _TN.jpg (200x200) thumbnail", 
+            ft.Text("• Images/PDFs: _TN.jpg (200x200) thumbnail", 
+                   size=12, color=colors['container_text']),
+            ft.Text("• Audio (.wav): .mp3 conversion + audio thumbnail", 
                    size=12, color=colors['container_text'])
         ])
         

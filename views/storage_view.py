@@ -136,16 +136,47 @@ class StorageView(BaseView):
                     name_without_ext = os.path.splitext(filename)[0]
                     file_ext = os.path.splitext(filename)[1]
                     
-                    # Generate unique ID for child
-                    child_unique_id = utils.generate_unique_id(self.page)
-                    child_numeric_part = child_unique_id.split('_')[-1] if '_' in child_unique_id else child_unique_id
+                    # Check if this file already has temp_file_info (from file selector)
+                    existing_info = None
+                    if file_idx < len(temp_file_info):
+                        existing_info = temp_file_info[file_idx]
                     
-                    # Create new filename with dg_* convention
-                    dg_filename = f"{child_unique_id}{file_ext}"
+                    # Check if this is a .wav audio file
+                    is_wav = file_ext.lower() == '.wav'
+                    
+                    # Check if this .wav file was already renamed by file selector
+                    already_renamed_wav = is_wav and existing_info and existing_info.get('is_wav', False)
+                    
+                    if already_renamed_wav:
+                        # Use the existing dg_* filename from file selector
+                        wav_filename = existing_info.get('sanitized_filename', filename)
+                        # Extract the base name (without .wav extension) for the .mp3
+                        base_id = os.path.splitext(wav_filename)[0]
+                        dg_filename = f"{base_id}.mp3"
+                        child_unique_id = base_id  # The unique ID is already in the filename
+                    else:
+                        # Generate unique ID for child
+                        child_unique_id = utils.generate_unique_id(self.page)
+                        
+                        # Create new filename with dg_* convention
+                        if is_wav:
+                            # For .wav files, primary representation is .mp3
+                            dg_filename = f"{child_unique_id}.mp3"
+                            # Preservation copy is the .wav
+                            wav_filename = f"{child_unique_id}.wav"
+                        else:
+                            dg_filename = f"{child_unique_id}{file_ext}"
+                    
+                    child_numeric_part = child_unique_id.split('_')[-1] if '_' in child_unique_id else child_unique_id
                     
                     # Set child fields
                     if 'file_name_1' in child_row:
                         child_row['file_name_1'] = dg_filename
+                    
+                    # For .wav files, set file_name_2 to the .wav preservation copy
+                    if is_wav and 'file_name_2' in child_row:
+                        child_row['file_name_2'] = wav_filename
+                    
                     if 'originating_system_id' in child_row:
                         child_row['originating_system_id'] = child_unique_id
                     if 'group_id' in child_row:
@@ -156,6 +187,11 @@ class StorageView(BaseView):
                         child_title = f"{base_name} - Part {part_num}"
                         child_row['dc:title'] = child_title
                         toc_entries.append(child_title)
+                    
+                    # Set dc:type to "Sound" for audio files
+                    if is_wav and 'dc:type' in child_row:
+                        child_row['dc:type'] = 'Sound'
+                    
                     if 'compoundrelationship' in child_row:
                         child_row['compoundrelationship'] = f"child:part{part_num}"
                     if 'rep_label' in child_row:
@@ -167,24 +203,51 @@ class StorageView(BaseView):
                     if temp_objs_dir and os.path.exists(temp_objs_dir):
                         try:
                             old_temp_path = file_path
-                            new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                            
+                            if is_wav and not already_renamed_wav:
+                                # For .wav files not yet renamed, rename to .wav extension (preservation copy)
+                                new_temp_path = os.path.join(temp_objs_dir, wav_filename)
+                            elif not is_wav:
+                                # For non-wav files, use the dg_filename
+                                new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                            else:
+                                # .wav file already renamed by file selector, no need to rename
+                                new_temp_path = old_temp_path
                             
                             if os.path.exists(old_temp_path) and old_temp_path != new_temp_path:
                                 os.rename(old_temp_path, new_temp_path)
-                                self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {dg_filename}")
+                                self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {os.path.basename(new_temp_path)}")
+                                
+                                # If this is a .wav file, also rename the corresponding .mp3 if it exists
+                                if is_wav and not already_renamed_wav:
+                                    old_mp3_name = os.path.splitext(os.path.basename(old_temp_path))[0] + '.mp3'
+                                    old_mp3_path = os.path.join(temp_objs_dir, old_mp3_name)
+                                    new_mp3_name = os.path.splitext(wav_filename)[0] + '.mp3'
+                                    new_mp3_path = os.path.join(temp_objs_dir, new_mp3_name)
+                                    
+                                    if os.path.exists(old_mp3_path):
+                                        os.rename(old_mp3_path, new_mp3_path)
+                                        self.logger.info(f"Renamed corresponding MP3: {old_mp3_name} -> {new_mp3_name}")
                                 
                                 if file_idx < len(temp_file_info):
                                     info = temp_file_info[file_idx].copy()
                                     info['temp_path'] = new_temp_path
-                                    info['sanitized_filename'] = dg_filename
+                                    if is_wav:
+                                        info['sanitized_filename'] = wav_filename
+                                        info['is_wav'] = True
+                                    else:
+                                        info['sanitized_filename'] = dg_filename
                                     updated_temp_file_info.append(info)
                                 else:
-                                    updated_temp_file_info.append({
+                                    new_info = {
                                         'original_path': file_path,
                                         'original_filename': filename,
                                         'temp_path': new_temp_path,
-                                        'sanitized_filename': dg_filename
-                                    })
+                                        'sanitized_filename': wav_filename if is_wav else dg_filename
+                                    }
+                                    if is_wav:
+                                        new_info['is_wav'] = True
+                                    updated_temp_file_info.append(new_info)
                         except Exception as rename_err:
                             self.logger.error(f"Failed to rename temp file {filename}: {rename_err}")
                     
@@ -213,18 +276,47 @@ class StorageView(BaseView):
             name_without_ext = os.path.splitext(filename)[0]
             file_ext = os.path.splitext(filename)[1]
             
-            # Generate unique ID for this file
-            unique_id = utils.generate_unique_id(self.page)
+            # Check if this file already has temp_file_info (from file selector)
+            existing_info = None
+            if file_idx < len(temp_file_info):
+                existing_info = temp_file_info[file_idx]
+            
+            # Check if this is a .wav audio file
+            is_wav = file_ext.lower() == '.wav'
+            
+            # Check if this .wav file was already renamed by file selector
+            already_renamed_wav = is_wav and existing_info and existing_info.get('is_wav', False)
+            
+            if already_renamed_wav:
+                # Use the existing dg_* filename from file selector
+                wav_filename = existing_info.get('sanitized_filename', filename)
+                # Extract the base name (without .wav extension) for the .mp3
+                base_id = os.path.splitext(wav_filename)[0]
+                dg_filename = f"{base_id}.mp3"
+                unique_id = base_id  # The unique ID is already in the filename
+            else:
+                # Generate unique ID for this file
+                unique_id = utils.generate_unique_id(self.page)
+                
+                # Create new filename with dg_* convention
+                if is_wav:
+                    # For .wav files, primary representation is .mp3
+                    dg_filename = f"{unique_id}.mp3"
+                    # Preservation copy is the .wav
+                    wav_filename = f"{unique_id}.wav"
+                else:
+                    dg_filename = f"{unique_id}{file_ext}"
             
             # Extract numeric portion for Handle URL
             numeric_part = unique_id.split('_')[-1] if '_' in unique_id else unique_id
             
-            # Create new filename with dg_* convention
-            dg_filename = f"{unique_id}{file_ext}"
-            
-            # Set file_name_1 to the dg_* filename
+            # Set file_name_1 to the dg_* filename (primary representation)
             if 'file_name_1' in row:
                 row['file_name_1'] = dg_filename
+            
+            # For .wav files, set file_name_2 to the .wav preservation copy
+            if is_wav and 'file_name_2' in row:
+                row['file_name_2'] = wav_filename
             
             # Set dc:identifier Handle URL
             if 'dc:identifier' in row:
@@ -232,33 +324,73 @@ class StorageView(BaseView):
             
             # Set dc:title to original filename without extension
             if 'dc:title' in row:
-                row['dc:title'] = name_without_ext
+                if existing_info:
+                    # Use original filename from temp_file_info
+                    orig_name = os.path.splitext(existing_info.get('original_filename', filename))[0]
+                    row['dc:title'] = orig_name
+                else:
+                    row['dc:title'] = name_without_ext
+            
+            # Set dc:type to "Sound" for audio files
+            if is_wav and 'dc:type' in row:
+                row['dc:type'] = 'Sound'
             
             # Rename temp file if we have temp directory info
             if temp_objs_dir and os.path.exists(temp_objs_dir):
                 try:
                     old_temp_path = file_path
-                    new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                    
+                    if is_wav and not already_renamed_wav:
+                        # For .wav files not yet renamed, rename to .wav extension (preservation copy)
+                        new_temp_path = os.path.join(temp_objs_dir, wav_filename)
+                    elif not is_wav:
+                        # For non-wav files, use the dg_filename
+                        new_temp_path = os.path.join(temp_objs_dir, dg_filename)
+                    else:
+                        # .wav file already renamed by file selector, no need to rename
+                        new_temp_path = old_temp_path
                     
                     # Only rename if the file exists and new name is different
                     if os.path.exists(old_temp_path) and old_temp_path != new_temp_path:
                         os.rename(old_temp_path, new_temp_path)
-                        self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {dg_filename}")
+                        self.logger.info(f"Renamed temp file: {os.path.basename(old_temp_path)} -> {os.path.basename(new_temp_path)}")
+                        
+                        # If this is a .wav file, also rename the corresponding .mp3 if it exists
+                        if is_wav and not already_renamed_wav:
+                            old_mp3_name = os.path.splitext(os.path.basename(old_temp_path))[0] + '.mp3'
+                            old_mp3_path = os.path.join(temp_objs_dir, old_mp3_name)
+                            new_mp3_name = os.path.splitext(wav_filename)[0] + '.mp3'
+                            new_mp3_path = os.path.join(temp_objs_dir, new_mp3_name)
+                            
+                            if os.path.exists(old_mp3_path):
+                                os.rename(old_mp3_path, new_mp3_path)
+                                self.logger.info(f"Renamed corresponding MP3: {old_mp3_name} -> {new_mp3_name}")
                         
                         # Update temp_file_info if available
                         if file_idx < len(temp_file_info):
                             info = temp_file_info[file_idx].copy()
                             info['temp_path'] = new_temp_path
-                            info['sanitized_filename'] = dg_filename
+                            if is_wav:
+                                info['sanitized_filename'] = wav_filename
+                                info['is_wav'] = True
+                            else:
+                                info['sanitized_filename'] = dg_filename
                             updated_temp_file_info.append(info)
                         else:
                             # Create new info entry
-                            updated_temp_file_info.append({
+                            new_info = {
                                 'original_path': file_path,
                                 'original_filename': filename,
                                 'temp_path': new_temp_path,
-                                'sanitized_filename': dg_filename
-                            })
+                                'sanitized_filename': wav_filename if is_wav else dg_filename
+                            }
+                            if is_wav:
+                                new_info['is_wav'] = True
+                            updated_temp_file_info.append(new_info)
+                    elif already_renamed_wav:
+                        # Keep existing info for already-renamed .wav files
+                        if file_idx < len(temp_file_info):
+                            updated_temp_file_info.append(temp_file_info[file_idx])
                 except Exception as rename_err:
                     self.logger.error(f"Failed to rename temp file {filename}: {rename_err}")
                     # Keep original temp file info if rename fails
@@ -282,6 +414,9 @@ class StorageView(BaseView):
         
         # Save to persistent.json
         self.save_generated_csv()
+        
+        # Save generated CSV to temp directory
+        self.save_generated_csv_to_temp()
         
         # Create values.csv in temp directory
         self.save_values_csv()
@@ -316,6 +451,42 @@ class StorageView(BaseView):
             self.logger.info(f"Saved {len(self.generated_csv_data)} rows to session storage")
         except Exception as e:
             self.logger.error(f"Failed to save generated CSV data: {e}")
+    
+    def save_generated_csv_to_temp(self):
+        """Save the generated CSV file to the temp directory with a timestamped name."""
+        try:
+            # Get temp directory from session
+            temp_dir = self.page.session.get("temp_directory")
+            
+            if not temp_dir or not os.path.exists(temp_dir):
+                self.logger.warning("No temp directory available, skipping CSV file creation")
+                return False
+            
+            if not self.generated_csv_data:
+                self.logger.warning("No CSV data to save")
+                return False
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(self.generated_csv_data)
+            
+            # Create filename with timestamp
+            from datetime import datetime
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            csv_filename = f"generated_metadata_{timestamp}.csv"
+            csv_path = os.path.join(temp_dir, csv_filename)
+            
+            # Save CSV file
+            df.to_csv(csv_path, index=False, encoding='utf-8', quoting=0)
+            
+            # Store the CSV filename in session for the upload script
+            self.page.session.set("generated_csv_filename", csv_filename)
+            
+            self.logger.info(f"Saved generated CSV to: {csv_path} ({len(df)} rows)")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save generated CSV to temp: {e}")
+            return False
     
     def save_values_csv(self):
         """
@@ -357,9 +528,6 @@ class StorageView(BaseView):
         except Exception as e:
             self.logger.error(f"Failed to save values.csv: {e}")
             return False
-    
-    def except Exception as e:
-            self.logger.error(f"Failed to save generated CSV data: {e}")
     
     def load_generated_csv(self):
         """Load generated CSV data from session storage."""

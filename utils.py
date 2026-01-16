@@ -458,12 +458,20 @@ def generate_alma_s3_script(temp_directory, temp_csv_filename=None):
     # Default Profile ID for Alma uploads
     default_profile_id = "6496776180004641"
     
-    # Determine the CSV file reference for the script
+    # Build the CSV upload section conditionally
     if temp_csv_filename:
         csv_file_path = f"{temp_directory}/{temp_csv_filename}"
+        csv_upload_section = f"""# Step 2a: Copy temporary CSV file to S3
+# Using Profile ID: {default_profile_id}
+# Note: values.csv is handled automatically by Alma and should not be uploaded
+echo ""
+echo "Step 2a: Copying temporary CSV file to Alma S3 storage..."
+# Upload the metadata CSV file containing digital object information
+aws s3 cp {csv_file_path} s3://na-st01.ext.exlibrisgroup.com/01GCL_INST/upload/{default_profile_id}/<import-id>/
+
+"""
     else:
-        # Fallback to wildcard if filename not provided
-        csv_file_path = f"{temp_directory}/*.csv"
+        csv_upload_section = ""
     
     script_template = """#!/bin/bash
 
@@ -483,15 +491,7 @@ echo "Then edit this script and replace <import-id> in the commands below"
 echo ""
 read -p "Press Enter when ready to continue with the copy commands..."
 
-# Step 2a: Copy temporary CSV file to S3
-# Using Profile ID: {profile_id}
-# Note: values.csv is handled automatically by Alma and should not be uploaded
-echo ""
-echo "Step 2a: Copying temporary CSV file to Alma S3 storage..."
-# Upload the metadata CSV file containing digital object information
-aws s3 cp {csv_file_path} s3://na-st01.ext.exlibrisgroup.com/01GCL_INST/upload/{profile_id}/<import-id>/
-
-# Step 2b: Copy OBJS directory to S3
+{csv_upload}# Step 2b: Copy OBJS directory to S3
 echo ""
 echo "Step 2b: Copying OBJS directory to Alma S3 storage..."
 # Upload all master/original digital object files from the OBJS directory
@@ -522,5 +522,5 @@ aws s3 rm s3://na-st01.ext.exlibrisgroup.com/01GCL_INST/upload/{profile_id}/ --r
     return script_template.format(
         temp_directory=temp_directory, 
         profile_id=default_profile_id,
-        csv_file_path=csv_file_path
+        csv_upload=csv_upload_section
     )
