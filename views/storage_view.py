@@ -143,9 +143,13 @@ class StorageView(BaseView):
                     
                     # Check if this is a .wav audio file
                     is_wav = file_ext.lower() == '.wav'
+                    # Check if this is a .tif/.tiff image file
+                    is_tiff = file_ext.lower() in ['.tif', '.tiff']
                     
                     # Check if this .wav file was already renamed by file selector
                     already_renamed_wav = is_wav and existing_info and existing_info.get('is_wav', False)
+                    # Check if this .tiff file was already renamed by file selector
+                    already_renamed_tiff = is_tiff and existing_info and existing_info.get('is_tiff', False)
                     
                     if already_renamed_wav:
                         # Use the existing dg_* filename from file selector
@@ -153,6 +157,13 @@ class StorageView(BaseView):
                         # Extract the base name (without .wav extension) for the .mp3
                         base_id = os.path.splitext(wav_filename)[0]
                         dg_filename = f"{base_id}.mp3"
+                        child_unique_id = base_id  # The unique ID is already in the filename
+                    elif already_renamed_tiff:
+                        # Use the existing dg_* filename from file selector
+                        tiff_filename = existing_info.get('sanitized_filename', filename)
+                        # Extract the base name (without .tif extension) for the .jpg
+                        base_id = os.path.splitext(tiff_filename)[0]
+                        dg_filename = f"{base_id}.jpg"
                         child_unique_id = base_id  # The unique ID is already in the filename
                     else:
                         # Generate unique ID for child
@@ -164,6 +175,11 @@ class StorageView(BaseView):
                             dg_filename = f"{child_unique_id}.mp3"
                             # Preservation copy is the .wav
                             wav_filename = f"{child_unique_id}.wav"
+                        elif is_tiff:
+                            # For .tiff files, primary representation is .jpg
+                            dg_filename = f"{child_unique_id}.jpg"
+                            # Preservation copy is the .tiff
+                            tiff_filename = f"{child_unique_id}{file_ext}"
                         else:
                             dg_filename = f"{child_unique_id}{file_ext}"
                     
@@ -176,6 +192,10 @@ class StorageView(BaseView):
                     # For .wav files, set file_name_2 to the .wav preservation copy
                     if is_wav and 'file_name_2' in child_row:
                         child_row['file_name_2'] = wav_filename
+                    
+                    # For .tiff files, set file_name_2 to the .tiff preservation copy
+                    if is_tiff and 'file_name_2' in child_row:
+                        child_row['file_name_2'] = tiff_filename
                     
                     if 'originating_system_id' in child_row:
                         child_row['originating_system_id'] = child_unique_id
@@ -192,6 +212,10 @@ class StorageView(BaseView):
                     if is_wav and 'dc:type' in child_row:
                         child_row['dc:type'] = 'Sound'
                     
+                    # Set dc:type to "Image" for TIFF files
+                    if is_tiff and 'dc:type' in child_row:
+                        child_row['dc:type'] = 'Image'
+                    
                     if 'compoundrelationship' in child_row:
                         child_row['compoundrelationship'] = f"child:part{part_num}"
                     if 'rep_label' in child_row:
@@ -207,11 +231,14 @@ class StorageView(BaseView):
                             if is_wav and not already_renamed_wav:
                                 # For .wav files not yet renamed, rename to .wav extension (preservation copy)
                                 new_temp_path = os.path.join(temp_objs_dir, wav_filename)
-                            elif not is_wav:
-                                # For non-wav files, use the dg_filename
+                            elif is_tiff and not already_renamed_tiff:
+                                # For .tiff files not yet renamed, rename to .tiff extension (preservation copy)
+                                new_temp_path = os.path.join(temp_objs_dir, tiff_filename)
+                            elif not is_wav and not is_tiff:
+                                # For non-wav/non-tiff files, use the dg_filename
                                 new_temp_path = os.path.join(temp_objs_dir, dg_filename)
                             else:
-                                # .wav file already renamed by file selector, no need to rename
+                                # File already renamed by file selector, no need to rename
                                 new_temp_path = old_temp_path
                             
                             if os.path.exists(old_temp_path) and old_temp_path != new_temp_path:
@@ -229,12 +256,26 @@ class StorageView(BaseView):
                                         os.rename(old_mp3_path, new_mp3_path)
                                         self.logger.info(f"Renamed corresponding MP3: {old_mp3_name} -> {new_mp3_name}")
                                 
+                                # If this is a .tiff file, also rename the corresponding .jpg if it exists
+                                if is_tiff and not already_renamed_tiff:
+                                    old_jpg_name = os.path.splitext(os.path.basename(old_temp_path))[0] + '.jpg'
+                                    old_jpg_path = os.path.join(temp_objs_dir, old_jpg_name)
+                                    new_jpg_name = os.path.splitext(tiff_filename)[0] + '.jpg'
+                                    new_jpg_path = os.path.join(temp_objs_dir, new_jpg_name)
+                                    
+                                    if os.path.exists(old_jpg_path):
+                                        os.rename(old_jpg_path, new_jpg_path)
+                                        self.logger.info(f"Renamed corresponding JPG: {old_jpg_name} -> {new_jpg_name}")
+                                
                                 if file_idx < len(temp_file_info):
                                     info = temp_file_info[file_idx].copy()
                                     info['temp_path'] = new_temp_path
                                     if is_wav:
                                         info['sanitized_filename'] = wav_filename
                                         info['is_wav'] = True
+                                    elif is_tiff:
+                                        info['sanitized_filename'] = tiff_filename
+                                        info['is_tiff'] = True
                                     else:
                                         info['sanitized_filename'] = dg_filename
                                     updated_temp_file_info.append(info)
@@ -243,10 +284,12 @@ class StorageView(BaseView):
                                         'original_path': file_path,
                                         'original_filename': filename,
                                         'temp_path': new_temp_path,
-                                        'sanitized_filename': wav_filename if is_wav else dg_filename
+                                        'sanitized_filename': wav_filename if is_wav else (tiff_filename if is_tiff else dg_filename)
                                     }
                                     if is_wav:
                                         new_info['is_wav'] = True
+                                    elif is_tiff:
+                                        new_info['is_tiff'] = True
                                     updated_temp_file_info.append(new_info)
                         except Exception as rename_err:
                             self.logger.error(f"Failed to rename temp file {filename}: {rename_err}")
@@ -283,9 +326,13 @@ class StorageView(BaseView):
             
             # Check if this is a .wav audio file
             is_wav = file_ext.lower() == '.wav'
+            # Check if this is a .tif/.tiff image file
+            is_tiff = file_ext.lower() in ['.tif', '.tiff']
             
             # Check if this .wav file was already renamed by file selector
             already_renamed_wav = is_wav and existing_info and existing_info.get('is_wav', False)
+            # Check if this .tiff file was already renamed by file selector
+            already_renamed_tiff = is_tiff and existing_info and existing_info.get('is_tiff', False)
             
             if already_renamed_wav:
                 # Use the existing dg_* filename from file selector
@@ -293,6 +340,13 @@ class StorageView(BaseView):
                 # Extract the base name (without .wav extension) for the .mp3
                 base_id = os.path.splitext(wav_filename)[0]
                 dg_filename = f"{base_id}.mp3"
+                unique_id = base_id  # The unique ID is already in the filename
+            elif already_renamed_tiff:
+                # Use the existing dg_* filename from file selector
+                tiff_filename = existing_info.get('sanitized_filename', filename)
+                # Extract the base name (without .tif extension) for the .jpg
+                base_id = os.path.splitext(tiff_filename)[0]
+                dg_filename = f"{base_id}.jpg"
                 unique_id = base_id  # The unique ID is already in the filename
             else:
                 # Generate unique ID for this file
@@ -304,6 +358,11 @@ class StorageView(BaseView):
                     dg_filename = f"{unique_id}.mp3"
                     # Preservation copy is the .wav
                     wav_filename = f"{unique_id}.wav"
+                elif is_tiff:
+                    # For .tiff files, primary representation is .jpg
+                    dg_filename = f"{unique_id}.jpg"
+                    # Preservation copy is the .tiff
+                    tiff_filename = f"{unique_id}{file_ext}"
                 else:
                     dg_filename = f"{unique_id}{file_ext}"
             
@@ -317,6 +376,10 @@ class StorageView(BaseView):
             # For .wav files, set file_name_2 to the .wav preservation copy
             if is_wav and 'file_name_2' in row:
                 row['file_name_2'] = wav_filename
+            
+            # For .tiff files, set file_name_2 to the .tiff preservation copy
+            if is_tiff and 'file_name_2' in row:
+                row['file_name_2'] = tiff_filename
             
             # Set dc:identifier Handle URL
             if 'dc:identifier' in row:
@@ -335,6 +398,10 @@ class StorageView(BaseView):
             if is_wav and 'dc:type' in row:
                 row['dc:type'] = 'Sound'
             
+            # Set dc:type to "Image" for TIFF files
+            if is_tiff and 'dc:type' in row:
+                row['dc:type'] = 'Image'
+            
             # Rename temp file if we have temp directory info
             if temp_objs_dir and os.path.exists(temp_objs_dir):
                 try:
@@ -343,11 +410,14 @@ class StorageView(BaseView):
                     if is_wav and not already_renamed_wav:
                         # For .wav files not yet renamed, rename to .wav extension (preservation copy)
                         new_temp_path = os.path.join(temp_objs_dir, wav_filename)
-                    elif not is_wav:
-                        # For non-wav files, use the dg_filename
+                    elif is_tiff and not already_renamed_tiff:
+                        # For .tiff files not yet renamed, rename to .tiff extension (preservation copy)
+                        new_temp_path = os.path.join(temp_objs_dir, tiff_filename)
+                    elif not is_wav and not is_tiff:
+                        # For non-wav/non-tiff files, use the dg_filename
                         new_temp_path = os.path.join(temp_objs_dir, dg_filename)
                     else:
-                        # .wav file already renamed by file selector, no need to rename
+                        # File already renamed by file selector, no need to rename
                         new_temp_path = old_temp_path
                     
                     # Only rename if the file exists and new name is different
@@ -366,6 +436,17 @@ class StorageView(BaseView):
                                 os.rename(old_mp3_path, new_mp3_path)
                                 self.logger.info(f"Renamed corresponding MP3: {old_mp3_name} -> {new_mp3_name}")
                         
+                        # If this is a .tiff file, also rename the corresponding .jpg if it exists
+                        if is_tiff and not already_renamed_tiff:
+                            old_jpg_name = os.path.splitext(os.path.basename(old_temp_path))[0] + '.jpg'
+                            old_jpg_path = os.path.join(temp_objs_dir, old_jpg_name)
+                            new_jpg_name = os.path.splitext(tiff_filename)[0] + '.jpg'
+                            new_jpg_path = os.path.join(temp_objs_dir, new_jpg_name)
+                            
+                            if os.path.exists(old_jpg_path):
+                                os.rename(old_jpg_path, new_jpg_path)
+                                self.logger.info(f"Renamed corresponding JPG: {old_jpg_name} -> {new_jpg_name}")
+                        
                         # Update temp_file_info if available
                         if file_idx < len(temp_file_info):
                             info = temp_file_info[file_idx].copy()
@@ -373,6 +454,9 @@ class StorageView(BaseView):
                             if is_wav:
                                 info['sanitized_filename'] = wav_filename
                                 info['is_wav'] = True
+                            elif is_tiff:
+                                info['sanitized_filename'] = tiff_filename
+                                info['is_tiff'] = True
                             else:
                                 info['sanitized_filename'] = dg_filename
                             updated_temp_file_info.append(info)
@@ -382,13 +466,15 @@ class StorageView(BaseView):
                                 'original_path': file_path,
                                 'original_filename': filename,
                                 'temp_path': new_temp_path,
-                                'sanitized_filename': wav_filename if is_wav else dg_filename
+                                'sanitized_filename': wav_filename if is_wav else (tiff_filename if is_tiff else dg_filename)
                             }
                             if is_wav:
                                 new_info['is_wav'] = True
+                            elif is_tiff:
+                                new_info['is_tiff'] = True
                             updated_temp_file_info.append(new_info)
-                    elif already_renamed_wav:
-                        # Keep existing info for already-renamed .wav files
+                    elif already_renamed_wav or already_renamed_tiff:
+                        # Keep existing info for already-renamed files
                         if file_idx < len(temp_file_info):
                             updated_temp_file_info.append(temp_file_info[file_idx])
                 except Exception as rename_err:

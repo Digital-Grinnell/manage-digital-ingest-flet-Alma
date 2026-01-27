@@ -302,10 +302,13 @@ class UpdateCSVView(BaseView):
                 self.logger.warning(f"Missing data - temp_file_info: {temp_file_info is not None}, csv_filenames_for_matched: {csv_filenames_for_matched is not None}")
             
             # Step 1.5: Handle .wav audio files - set file_name_1 to .mp3, file_name_2 to .wav, and dc:type to "Sound"
+            # Step 1.6: Handle .tiff image files - set file_name_1 to .jpg, file_name_2 to .tiff, and dc:type to "Image"
             if current_mode == "Alma" and temp_file_info:
                 wav_updates = 0
+                tiff_updates = 0
                 for idx, file_info in enumerate(temp_file_info):
                     is_wav = file_info.get('is_wav', False)
+                    is_tiff = file_info.get('is_tiff', False)
                     
                     if is_wav:
                         # Get the sanitized .wav filename
@@ -336,9 +339,41 @@ class UpdateCSVView(BaseView):
                                 
                                 wav_updates += 1
                                 self.logger.info(f"Updated row {row_idx} for .wav audio: file_name_1={mp3_filename}, file_name_2={wav_filename}, dc:type=Sound")
+                    
+                    elif is_tiff:
+                        # Get the sanitized .tiff filename
+                        tiff_filename = file_info.get('sanitized_filename', '')
+                        
+                        if tiff_filename:
+                            # Find the row with this .tiff filename in file_name_1
+                            mask = ((self.csv_data[column_name] == tiff_filename) & 
+                                   (~self.csv_data[first_column].str.startswith('#', na=False)))
+                            
+                            if mask.any():
+                                row_idx = self.csv_data[mask].index[0]
+                                
+                                # Get the base name (without extension)
+                                base_name = os.path.splitext(tiff_filename)[0]
+                                
+                                # Set file_name_1 to .jpg (primary representation)
+                                jpg_filename = f"{base_name}.jpg"
+                                self.csv_data.at[row_idx, column_name] = jpg_filename
+                                
+                                # Set file_name_2 to .tiff (preservation representation)
+                                if 'file_name_2' in self.csv_data.columns:
+                                    self.csv_data.at[row_idx, 'file_name_2'] = tiff_filename
+                                
+                                # Set dc:type to "Image"
+                                if 'dc:type' in self.csv_data.columns:
+                                    self.csv_data.at[row_idx, 'dc:type'] = 'Image'
+                                
+                                tiff_updates += 1
+                                self.logger.info(f"Updated row {row_idx} for .tiff image: file_name_1={jpg_filename}, file_name_2={tiff_filename}, dc:type=Image")
                 
                 if wav_updates > 0:
                     self.logger.info(f"Processed {wav_updates} .wav audio file(s) with dual representations")
+                if tiff_updates > 0:
+                    self.logger.info(f"Processed {tiff_updates} .tiff image file(s) with dual representations")
             
             # Step 2: Append a new row for the CSV file itself (Alma mode only)
             if current_mode == "Alma":

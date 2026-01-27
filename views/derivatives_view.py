@@ -23,6 +23,137 @@ class DerivativesView(BaseView):
         self.processing = False
         self.cancel_processing = False
     
+    def create_image_derivatives(self, file_path, temp_base_dir, root):
+        """
+        Create derivatives for TIFF/TIF image files:
+        1. Convert TIFF to high-quality JPG in OBJS directory
+        2. Create thumbnail using standard thumbnail generation
+        
+        Args:
+            file_path: Path to the source TIFF file
+            temp_base_dir: Base temp directory
+            root: Root filename (without extension)
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        try:
+            from PIL import Image
+            
+            # Get colors for UI updates
+            colors = self.get_theme_colors()
+            
+            # Create OBJS directory if needed
+            objs_dir = os.path.join(temp_base_dir, 'OBJS')
+            os.makedirs(objs_dir, exist_ok=True)
+            
+            # Create TN directory if needed
+            tn_dir = os.path.join(temp_base_dir, 'TN')
+            os.makedirs(tn_dir, exist_ok=True)
+            
+            # 1. Convert TIFF to high-quality JPG in OBJS
+            jpg_filename = f"{root}.jpg"
+            jpg_path = os.path.join(objs_dir, jpg_filename)
+            
+            # Get file size for logging
+            try:
+                tiff_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                msg = f"  Starting image conversion: {os.path.basename(file_path)} ({tiff_size_mb:.2f} MB)"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                    self.page.update()
+            except:
+                msg = f"  Starting image conversion: {os.path.basename(file_path)}"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                    self.page.update()
+            
+            msg = "  Converting TIFF to high-quality JPG..."
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                self.page.update()
+            
+            # Open and convert TIFF to JPG
+            with Image.open(file_path) as img:
+                # Convert to RGB if needed (TIFF might be CMYK, RGBA, etc.)
+                if img.mode not in ('RGB', 'L'):
+                    # Convert CMYK or other modes to RGB
+                    if img.mode == 'CMYK':
+                        # For CMYK images, use a more careful conversion
+                        from PIL import ImageCms
+                        try:
+                            # Try to use ICC profile if available
+                            img = ImageCms.profileToProfile(img, 
+                                                           ImageCms.createProfile('sRGB'), 
+                                                           ImageCms.createProfile('sRGB'),
+                                                           outputMode='RGB')
+                        except:
+                            # Fall back to simple conversion
+                            img = img.convert('RGB')
+                    else:
+                        img = img.convert('RGB')
+                
+                # Save as high-quality JPG (95% quality for archival access copy)
+                img.save(jpg_path, 'JPEG', quality=95, optimize=True)
+            
+            # Log success with file size
+            try:
+                jpg_size_mb = os.path.getsize(jpg_path) / (1024 * 1024)
+                msg = f"  ✓ JPG conversion complete: {jpg_filename} ({jpg_size_mb:.2f} MB)"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.page.update()
+            except:
+                msg = f"  ✓ JPG conversion complete: {jpg_filename}"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.page.update()
+            
+            # 2. Create thumbnail using standard thumbnail generation
+            msg = f"  Creating thumbnail for {root}..."
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                self.page.update()
+            
+            # Create thumbnail with Alma naming convention
+            thumbnail_filename = f"{root}.jpg.clientThumb"
+            thumbnail_path = os.path.join(tn_dir, thumbnail_filename)
+            
+            # Use the generate_thumbnail function for consistent quality
+            options = {
+                'trim': False,
+                'height': 200,
+                'width': 200,
+                'quality': 85,
+                'type': 'thumbnail'
+            }
+            
+            success = generate_thumbnail(file_path, thumbnail_path, options)
+            
+            if not success:
+                error_msg = f"Failed to create thumbnail for TIFF: {thumbnail_path}"
+                self.logger.error(error_msg)
+                return False, error_msg
+            
+            msg = f"  ✓ Thumbnail created: {thumbnail_filename}"
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                self.page.update()
+            
+            return True, f"Created JPG: {jpg_filename}, Thumbnail: {thumbnail_filename}"
+            
+        except Exception as e:
+            error_msg = f"Error creating image derivatives: {str(e)}"
+            self.logger.error(error_msg)
+            return False, error_msg
+    
     def create_audio_derivatives(self, file_path, temp_base_dir, root):
         """
         Create derivatives for audio files (.wav):
@@ -212,7 +343,16 @@ class DerivativesView(BaseView):
                 }
                 
                 # Process based on file type
-                if ext.lower() in ['.tiff', '.tif', '.jpg', '.jpeg', '.png', '.gif', '.bmp']:
+                if ext.lower() in ['.tiff', '.tif']:
+                    # Handle TIFF files - convert to JPG and create thumbnail
+                    success, message = self.create_image_derivatives(file_path, temp_base_dir, root)
+                    if success:
+                        self.logger.info(f"Created image derivatives: {message}")
+                        return True, message
+                    else:
+                        self.logger.error(f"Failed to create image derivatives: {message}")
+                        return False, message
+                elif ext.lower() in ['.jpg', '.jpeg', '.png', '.gif', '.bmp']:
                     success = generate_thumbnail(file_path, derivative_path, options)
                     if success:
                         self.logger.info(f"Created Alma thumbnail: {derivative_path}")
