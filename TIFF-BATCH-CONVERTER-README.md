@@ -52,9 +52,12 @@ AWS credentials are loaded from the repository's `.env` file:
 AWS_ACCESS_KEY_ID=your_access_key_here
 AWS_SECRET_ACCESS_KEY=your_secret_key_here
 AWS_REGION=us-east-1
+AWS_PROD_BUCKET=na-st01.ext.exlibrisgroup.com  # S3 bucket name (used by converter)
 ```
 
 **No need to run `aws configure`** - credentials are automatically loaded from `.env`.
+
+The script will use `AWS_PROD_BUCKET` from .env as the S3 bucket name (defaults to `grinnell-edu-backup` if not set).
 
 ## Input
 

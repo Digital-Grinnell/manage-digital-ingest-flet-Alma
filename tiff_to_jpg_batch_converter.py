@@ -292,7 +292,8 @@ def main():
     # Configuration
     input_csv = '/Users/mcfatem/GitHub/CABB/all_single_tiffs.csv'
     output_directory = '~/TIF-to-JPG-Derivatives/'
-    s3_bucket = 'grinnell-edu-backup'
+    # Use bucket from .env file instead of hardcoded value
+    s3_bucket = os.getenv('AWS_PROD_BUCKET', 'grinnell-edu-backup')
     use_s3_download = True  # Set to False for local file testing
     
     # Verify input file exists
