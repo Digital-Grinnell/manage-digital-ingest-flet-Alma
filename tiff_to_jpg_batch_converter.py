@@ -32,6 +32,10 @@ from datetime import datetime
 from PIL import Image, ImageCms
 import tempfile
 import shutil
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Setup logging
 log_file = 'tiff_to_jpg_conversion.log'
@@ -118,8 +122,23 @@ def download_from_s3(s3_path, local_path, bucket_name='grinnell-edu-backup'):
     Returns:
         bool: True if successful, False otherwise
     """
-    try:
-        import boto3
+    try:Get AWS credentials from environment variables (loaded from .env)
+        aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+        aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+        aws_region = os.getenv('AWS_REGION', 'us-east-1')
+        
+        if not aws_access_key or not aws_secret_key:
+            logger.error("  ✗ AWS credentials not found in .env file")
+            logger.error("  Required: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+            return False
+        
+        # Initialize S3 client with credentials from .env
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=aws_access_key,
+            aws_secret_access_key=aws_secret_key,
+            region_name=aws_region
+        
         from botocore.exceptions import ClientError
         
         # Initialize S3 client
@@ -284,7 +303,20 @@ def main():
     logger.info(f"Input CSV: {input_csv}")
     logger.info(f"Output directory: {output_directory}")
     logger.info(f"S3 bucket: {s3_bucket}")
-    logger.info(f"Use S3 download: {use_s3_download}")
+    logg    
+            # Verify AWS credentials are in .env
+            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+            
+            if aws_access_key and aws_secret_key:
+                logger.info(f"✓ AWS credentials loaded from .env")
+                logger.info(f"  Region: {os.getenv('AWS_REGION', 'us-east-1')}")
+            else:
+                logger.error("✗ AWS credentials not found in .env file")
+                logger.error("  Required: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+                sys.exit(1)
+                
+        er.info(f"Use S3 download: {use_s3_download}")
     logger.info("")
     
     # Check dependencies

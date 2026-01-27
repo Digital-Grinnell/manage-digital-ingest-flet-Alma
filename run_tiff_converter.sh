@@ -44,18 +44,30 @@ python3 -c "import boto3" 2>/dev/null || {
     pip install boto3
 }
 
-# Check AWS credentials
-echo -e "${GREEN}Checking AWS credentials...${NC}"
-if ! aws sts get-caller-identity &>/dev/null; then
-    echo -e "${YELLOW}Warning: AWS credentials not configured or invalid${NC}"
-    echo -e "${YELLOW}Configure with: aws configure${NC}"
-    echo -e "${YELLOW}Or set environment variables: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY${NC}"
+python3 -c "import dotenv" 2>/dev/null || {
+    echo -e "${YELLOW}Installing python-dotenv...${NC}"
+    pip install python-dotenv
+}
+
+# Check for .env file with AWS credentials
+echo -e "${GREEN}Checking AWS credentials in .env...${NC}"
+if [ ! -f ".env" ]; then
+    echo -e "${RED}Error: .env file not found${NC}"
+    echo -e "${YELLOW}Please create .env with AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY${NC}"
+    exit 1
+fi
+
+if ! grep -q "AWS_ACCESS_KEY_ID" .env || ! grep -q "AWS_SECRET_ACCESS_KEY" .env; then
+    echo -e "${YELLOW}Warning: AWS credentials not found in .env${NC}"
+    echo -e "${YELLOW}Required: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY${NC}"
     echo ""
     read -p "Continue anyway? (y/N) " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         exit 1
     fi
+else
+    echo -e "${GREEN}✓ AWS credentials found in .env${NC}"
 fi
 
 echo ""

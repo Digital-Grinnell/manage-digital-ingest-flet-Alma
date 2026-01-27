@@ -26,36 +26,35 @@ The script runs in the repository's `.venv` virtual environment and requires:
 
 ```bash
 # Pillow is already installed (included in python-requirements.txt)
-# boto3 needs to be installed:
+# Install boto3 and python-dotenv:
 source .venv/bin/activate
-pip install boto3
+pip install boto3 python-dotenv
 deactivate
 ```
 
-Or let the wrapper script install it automatically:
+Or let the wrapper script install them automatically:
 ```bash
 ./run_tiff_converter.sh
-# Will auto-install boto3 if not present
+# Will auto-install boto3 and python-dotenv if not present
 ```
 
 **Required packages**:
 - **Pillow (PIL)**: Image processing library for TIFF to JPG conversion ✓ Already installed
 - **boto3**: AWS SDK for Python (S3 file downloads) - Will be installed on first run
+- **python-dotenv**: Load AWS credentials from .env file - Will be installed on first run
 
 ### AWS Credentials
 
-Ensure AWS credentials are configured for S3 access:
+AWS credentials are loaded from the repository's `.env` file:
 
 ```bash
-aws configure
+# .env file should contain:
+AWS_ACCESS_KEY_ID=your_access_key_here
+AWS_SECRET_ACCESS_KEY=your_secret_key_here
+AWS_REGION=us-east-1
 ```
 
-Or set environment variables:
-```bash
-export AWS_ACCESS_KEY_ID=your_access_key
-export AWS_SECRET_ACCESS_KEY=your_secret_key
-export AWS_DEFAULT_REGION=us-east-1
-```
+**No need to run `aws configure`** - credentials are automatically loaded from `.env`.
 
 ## Input
 
@@ -124,7 +123,8 @@ Contains detailed logging of:
 cd /Users/mcfatem/GitHub/manage-digital-ingest-flet-Alma
 
 # 2. Configure AWS credentials (one-time setup)
-aws configure
+aws cVerify AWS credentials are in .env file (already configured)
+grep AWS_ACCESS_KEY_ID .env
 
 # 3. Run the converter
 ./run_tiff_converter.sh
@@ -132,9 +132,8 @@ aws configure
 
 The wrapper script will:
 - ✓ Activate the `.venv` virtual environment
-- ✓ Check and install missing dependencies (boto3)
-- ✓ Verify AWS credentials
-- ✓ Run the conversion process
+- ✓ Check and install missing dependencies (boto3, python-dotenv)
+- ✓ Verify AWS credentials in .env filecess
 - ✓ Deactivate the environment when done
 
 ### Basic Execution
