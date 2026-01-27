@@ -142,11 +142,7 @@ def download_from_s3(s3_path, local_path, bucket_name='grinnell-edu-backup'):
             aws_access_key_id=aws_access_key,
             aws_secret_access_key=aws_secret_key,
             region_name=aws_region
-        
-        from botocore.exceptions import ClientError
-        
-        # Initialize S3 client
-        s3_client = boto3.client('s3')
+        )
         
         # Download file
         logger.debug(f"  Downloading from S3: s3://{bucket_name}/{s3_path}")
