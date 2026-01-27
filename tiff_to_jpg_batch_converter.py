@@ -145,6 +145,8 @@ def download_from_s3(s3_path, local_path, bucket_name='grinnell-edu-backup'):
         )
         
         # Download file
+        logger.info(f"  S3 Bucket: {bucket_name}")
+        logger.info(f"  S3 Key: {s3_path}")
         logger.debug(f"  Downloading from S3: s3://{bucket_name}/{s3_path}")
         s3_client.download_file(bucket_name, s3_path, local_path)
         logger.debug(f"  Downloaded to: {local_path}")
@@ -296,6 +298,12 @@ def main():
     s3_bucket = os.getenv('AWS_PROD_BUCKET', 'grinnell-edu-backup')
     use_s3_download = True  # Set to False for local file testing
     
+    # NOTE: If getting 403 errors, you may need different AWS credentials
+    # or the files may need to be accessed differently. Options:
+    # 1. Contact Ex Libris for proper S3 access credentials
+    # 2. Set use_s3_download = False and update CSV with local file paths
+    # 3. Use AWS CLI to test access: aws s3 ls s3://na-st01.ext.exlibrisgroup.com/
+    
     # Verify input file exists
     if not os.path.exists(input_csv):
         logger.error(f"Input CSV not found: {input_csv}")
@@ -305,6 +313,20 @@ def main():
     logger.info(f"Output directory: {output_directory}")
     logger.info(f"S3 bucket: {s3_bucket}")
     logger.info(f"Use S3 download: {use_s3_download}")
+    
+    # Show first few rows of CSV for debugging
+    logger.info("")
+    logger.info("First 3 rows from CSV:")
+    try:
+        with open(input_csv, 'r', encoding='utf-8') as f:
+            for i, line in enumerate(f):
+                if i < 3:
+                    logger.info(f"  Row {i}: {line.strip()}")
+                else:
+                    break
+    except Exception as e:
+        logger.warning(f"Could not read CSV preview: {e}")
+    
     logger.info("")
     
     # Check dependencies
