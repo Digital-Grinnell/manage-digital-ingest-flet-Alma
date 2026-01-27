@@ -303,20 +303,7 @@ def main():
     logger.info(f"Input CSV: {input_csv}")
     logger.info(f"Output directory: {output_directory}")
     logger.info(f"S3 bucket: {s3_bucket}")
-    logg    
-            # Verify AWS credentials are in .env
-            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
-            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
-            
-            if aws_access_key and aws_secret_key:
-                logger.info(f"✓ AWS credentials loaded from .env")
-                logger.info(f"  Region: {os.getenv('AWS_REGION', 'us-east-1')}")
-            else:
-                logger.error("✗ AWS credentials not found in .env file")
-                logger.error("  Required: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
-                sys.exit(1)
-                
-        er.info(f"Use S3 download: {use_s3_download}")
+    logger.info(f"Use S3 download: {use_s3_download}")
     logger.info("")
     
     # Check dependencies
@@ -331,6 +318,19 @@ def main():
         try:
             import boto3
             logger.info(f"✓ boto3 installed")
+            
+            # Verify AWS credentials are in .env
+            aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
+            aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
+            
+            if aws_access_key and aws_secret_key:
+                logger.info(f"✓ AWS credentials loaded from .env")
+                logger.info(f"  Region: {os.getenv('AWS_REGION', 'us-east-1')}")
+            else:
+                logger.error("✗ AWS credentials not found in .env file")
+                logger.error("  Required: AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
+                sys.exit(1)
+                
         except ImportError:
             logger.error("✗ boto3 not installed. Install with: pip install boto3")
             logger.error("  Or set use_s3_download = False to use local files")
