@@ -122,7 +122,11 @@ def download_from_s3(s3_path, local_path, bucket_name='grinnell-edu-backup'):
     Returns:
         bool: True if successful, False otherwise
     """
-    try:Get AWS credentials from environment variables (loaded from .env)
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        
+        # Get AWS credentials from environment variables (loaded from .env)
         aws_access_key = os.getenv('AWS_ACCESS_KEY_ID')
         aws_secret_key = os.getenv('AWS_SECRET_ACCESS_KEY')
         aws_region = os.getenv('AWS_REGION', 'us-east-1')
