@@ -441,6 +441,31 @@ dc:identifier: http://hdl.handle.net/11084/1729123456
 **Files Modified**:
 - `utils.py`: Rewrote `calculate_string_similarity()` and `perform_fuzzy_search()`
 
+### MMS ID Overlay Protection
+
+**Date**: January 2026
+
+**Feature**: Records with non-blank `mms_id` values are now treated as overlay records, meaning they represent existing Alma records being updated. The system now preserves all existing metadata for these records.
+
+**Implementation**:
+- Added `mms_id` column check before any CSV modifications
+- If `mms_id` has a value (non-blank), the row is skipped for:
+  - `originating_system_id` generation
+  - `dc:identifier` population/conversion
+  - File format conversions (.wav to .mp3, .tiff to .jpg)
+  - `dc:type` updates
+  - Any other metadata modifications
+- Self-referential CSV row is still added to values.csv regardless
+
+**Behavior**:
+- **New records** (blank `mms_id`): All processing applies (generate IDs, convert files, set metadata)
+- **Overlay records** (non-blank `mms_id`): Preserve all existing metadata, only add self-referential CSV row
+
+**Files Modified**:
+- `views/update_csv_view.py`: Added mms_id checks in Steps 1.5, 1.6, 3, and 3.5
+
+---
+
 ### Multi-Valued Field Expansion in values.csv
 
 **Date**: January 2026

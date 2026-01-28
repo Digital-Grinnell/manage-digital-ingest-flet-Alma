@@ -359,9 +359,11 @@ class UpdateCSVView(BaseView):
             
             # Step 1.5: Handle .wav audio files - set file_name_1 to .mp3, file_name_2 to .wav, and dc:type to "Sound"
             # Step 1.6: Handle .tiff image files - set file_name_1 to .jpg, file_name_2 to .tiff, and dc:type to "Image"
+            # BUT ONLY for new records (rows where mms_id is blank)
             if current_mode == "Alma" and temp_file_info:
                 wav_updates = 0
                 tiff_updates = 0
+                has_mms_id_column = 'mms_id' in self.csv_data.columns
                 for idx, file_info in enumerate(temp_file_info):
                     is_wav = file_info.get('is_wav', False)
                     is_tiff = file_info.get('is_tiff', False)
@@ -377,6 +379,13 @@ class UpdateCSVView(BaseView):
                             
                             if mask.any():
                                 row_idx = self.csv_data[mask].index[0]
+                                
+                                # Check if this is an existing record (has mms_id)
+                                if has_mms_id_column:
+                                    mms_id_value = self.csv_data.at[row_idx, 'mms_id']
+                                    if not pd.isna(mms_id_value) and str(mms_id_value).strip() != '':
+                                        # This is an overlay record - don't modify file names or dc:type
+                                        continue
                                 
                                 # Get the base name (without extension)
                                 base_name = os.path.splitext(wav_filename)[0]
@@ -407,6 +416,13 @@ class UpdateCSVView(BaseView):
                             
                             if mask.any():
                                 row_idx = self.csv_data[mask].index[0]
+                                
+                                # Check if this is an existing record (has mms_id)
+                                if has_mms_id_column:
+                                    mms_id_value = self.csv_data.at[row_idx, 'mms_id']
+                                    if not pd.isna(mms_id_value) and str(mms_id_value).strip() != '':
+                                        # This is an overlay record - don't modify file names or dc:type
+                                        continue
                                 
                                 # Get the base name (without extension)
                                 base_name = os.path.splitext(tiff_filename)[0]
@@ -464,13 +480,22 @@ class UpdateCSVView(BaseView):
                 self.logger.info(f"Appended new row with ID: {unique_id}")
             
             # Step 3: Fill empty originating_system_id cells with unique IDs (Alma mode only)
+            # BUT ONLY for new records (rows where mms_id is blank)
             if current_mode == "Alma":
                 filled_ids = 0
+                has_mms_id_column = 'mms_id' in self.csv_data.columns
                 if 'originating_system_id' in self.csv_data.columns:
                     for idx in range(len(self.csv_data)):
                         # Skip comment rows
                         if self.is_comment_row(idx):
                             continue
+                        
+                        # Check if this is an existing record (has mms_id)
+                        if has_mms_id_column:
+                            mms_id_value = self.csv_data.at[idx, 'mms_id']
+                            if not pd.isna(mms_id_value) and str(mms_id_value).strip() != '':
+                                # This is an overlay record - don't modify anything
+                                continue
                         
                         cell_value = self.csv_data.at[idx, 'originating_system_id']
                         # Check if empty (empty string, None, or NaN)
@@ -492,31 +517,43 @@ class UpdateCSVView(BaseView):
                     self.logger.warning("originating_system_id column not found in CSV")
             
             # Step 3.5: In Alma mode, convert dc:identifier to Handle URL format
+            # BUT ONLY for new records (rows where mms_id is blank) AND where dc:identifier is empty
             if current_mode == "Alma" and 'dc:identifier' in self.csv_data.columns and 'originating_system_id' in self.csv_data.columns:
                 handle_count = 0
+                has_mms_id_column = 'mms_id' in self.csv_data.columns
                 for idx in range(len(self.csv_data)):
                     # Skip comment rows
                     if self.is_comment_row(idx):
                         continue
                     
-                    orig_id = self.csv_data.at[idx, 'originating_system_id']
-                    # Extract numeric portion from originating_system_id (e.g., "dg_1234567890" -> "1234567890")
-                    if not pd.isna(orig_id) and str(orig_id).strip() != '':
-                        orig_id_str = str(orig_id).strip()
-                        # Extract numeric part (everything after last underscore or the whole thing if no underscore)
-                        if '_' in orig_id_str:
-                            numeric_part = orig_id_str.split('_')[-1]
-                        else:
-                            numeric_part = orig_id_str
-                        
-                        # Only proceed if we have a numeric part
-                        if numeric_part.isdigit():
-                            handle_url = f"http://hdl.handle.net/11084/{numeric_part}"
-                            self.csv_data.at[idx, 'dc:identifier'] = handle_url
-                            handle_count += 1
+                    # Check if this is an existing record (has mms_id)
+                    if has_mms_id_column:
+                        mms_id_value = self.csv_data.at[idx, 'mms_id']
+                        if not pd.isna(mms_id_value) and str(mms_id_value).strip() != '':
+                            # This is an overlay record - don't modify dc:identifier
+                            continue
+                    
+                    # Only set dc:identifier if it's currently empty
+                    dc_id_value = self.csv_data.at[idx, 'dc:identifier']
+                    if pd.isna(dc_id_value) or str(dc_id_value).strip() == '':
+                        orig_id = self.csv_data.at[idx, 'originating_system_id']
+                        # Extract numeric portion from originating_system_id (e.g., "dg_1234567890" -> "1234567890")
+                        if not pd.isna(orig_id) and str(orig_id).strip() != '':
+                            orig_id_str = str(orig_id).strip()
+                            # Extract numeric part (everything after last underscore or the whole thing if no underscore)
+                            if '_' in orig_id_str:
+                                numeric_part = orig_id_str.split('_')[-1]
+                            else:
+                                numeric_part = orig_id_str
+                            
+                            # Only proceed if we have a numeric part
+                            if numeric_part.isdigit():
+                                handle_url = f"http://hdl.handle.net/11084/{numeric_part}"
+                                self.csv_data.at[idx, 'dc:identifier'] = handle_url
+                                handle_count += 1
                 
                 if handle_count > 0:
-                    self.logger.info(f"Set {handle_count} dc:identifier cell(s) to Handle URL format")
+                    self.logger.info(f"Set {handle_count} dc:identifier cell(s) to Handle URL format (only for new records with empty dc:identifier)")
             
             # Step 3.6: Blank out collection_id for all rows except the last one (self-referential CSV row)
             if current_mode == "Alma" and 'collection_id' in self.csv_data.columns:
