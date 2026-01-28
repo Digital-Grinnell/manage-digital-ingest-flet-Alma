@@ -80,10 +80,10 @@ class FileSelectorView(BaseView):
     
     def copy_files_to_temp_directory(self, file_paths):
         """
-        Create symbolic links with sanitized names in a temporary directory that reference the original files.
+        Copy files with sanitized names to a temporary directory.
         
         Args:
-            file_paths: List of file paths to link
+            file_paths: List of file paths to copy
             
         Returns:
             tuple: (temp_file_paths: list, temp_file_info: list, temp_directory: str)
@@ -153,8 +153,8 @@ class FileSelectorView(BaseView):
                         temp_file_path = os.path.join(objs_dir, sanitized_filename)
                         counter += 1
                     
-                    # Create symbolic link instead of copying the file
-                    os.symlink(os.path.abspath(original_path), temp_file_path)
+                    # Copy the file instead of creating symbolic link
+                    shutil.copy2(os.path.abspath(original_path), temp_file_path)
                     
                     # Store the paths and info
                     temp_file_paths.append(temp_file_path)
@@ -165,10 +165,10 @@ class FileSelectorView(BaseView):
                         'sanitized_filename': sanitized_filename
                     })
                     
-                    self.logger.info(f"Created symbolic link '{sanitized_filename}' -> '{original_path}' in OBJS/")
+                    self.logger.info(f"Copied file '{sanitized_filename}' from '{original_path}' to OBJS/")
                     
                 except Exception as e:
-                    self.logger.error(f"Failed to create symbolic link for file {original_path}: {str(e)}")
+                    self.logger.error(f"Failed to copy file {original_path}: {str(e)}")
                     continue
             
             # Store in session
@@ -179,11 +179,11 @@ class FileSelectorView(BaseView):
             self.page.session.set("temp_files", temp_file_paths)
             self.page.session.set("temp_file_info", temp_file_info)
             
-            self.logger.info(f"Successfully created {len(temp_file_paths)} symbolic links in OBJS/ directory")
+            self.logger.info(f"Successfully copied {len(temp_file_paths)} files to OBJS/ directory")
             return temp_file_paths, temp_file_info, temp_dir
             
         except Exception as e:
-            self.logger.error(f"Failed to create temporary directory or symbolic links: {str(e)}")
+            self.logger.error(f"Failed to create temporary directory or copy files: {str(e)}")
             return [], [], None
     
     def clear_temp_directory(self):
@@ -437,7 +437,7 @@ class FilePickerSelectorView(FileSelectorView):
                 # Update the UI to show selected files
                 self.update_file_list()
                 
-                # Automatically create links
+                # Automatically copy files
                 self.auto_perform_file_picker_workflow(file_paths)
             else:
                 self.logger.info("No files selected")
@@ -520,7 +520,7 @@ class FilePickerSelectorView(FileSelectorView):
                 )
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             ft.Container(height=8),
-            ft.Text("A temporary directory of sanitized symbolic links will be populated to reference selected files.", 
+            ft.Text("A temporary directory of sanitized file copies will be populated with selected files.", 
                    size=12, color=colors['secondary_text'], italic=True),
             ft.Container(height=8),
             ft.Text("Selected Files:", size=16, weight=ft.FontWeight.BOLD, color=colors['primary_text']),
@@ -591,7 +591,7 @@ class FilePickerSelectorView(FileSelectorView):
             )
         else:
             return ft.Container(
-                content=ft.Text("📁 No temporary files - select files to automatically create links", 
+                content=ft.Text("📁 No temporary files - select files to automatically copy them", 
                                size=12, color=colors['secondary_text']),
                 padding=ft.padding.all(8),
                 border=ft.border.all(1, ft.Colors.ORANGE_200),
@@ -617,7 +617,7 @@ class FilePickerSelectorView(FileSelectorView):
                 self.temp_status_container.bgcolor = ft.Colors.GREEN_50
                 self.temp_status_container.border = ft.border.all(1, ft.Colors.GREEN_200)
             else:
-                self.temp_status_container.content = ft.Text("📁 No temporary files - select files to automatically create links", 
+                self.temp_status_container.content = ft.Text("📁 No temporary files - select files to automatically copy them", 
                                size=12, color=colors['secondary_text'])
                 self.temp_status_container.bgcolor = ft.Colors.ORANGE_50
                 self.temp_status_container.border = ft.border.all(1, ft.Colors.ORANGE_200)
@@ -625,13 +625,13 @@ class FilePickerSelectorView(FileSelectorView):
             self.page.update()
     
     def on_copy_files_to_temp(self, e):
-        """Handle creating symbolic links to files in temporary directory."""
+        """Handle copying files to temporary directory."""
         file_paths = self.page.session.get("selected_file_paths") or []
         if not file_paths:
-            self.show_snack("No files selected to link", is_error=True)
+            self.show_snack("No files selected to copy", is_error=True)
             return
         
-        self.logger.info(f"Creating symbolic links for {len(file_paths)} files in temporary directory...")
+        self.logger.info(f"Copying {len(file_paths)} files to temporary directory...")
         temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(file_paths)
         
         # Update selected_file_paths to point to temp files so derivatives are created there
@@ -639,24 +639,24 @@ class FilePickerSelectorView(FileSelectorView):
             self.page.session.set("selected_file_paths", temp_files)
         
         if temp_files:
-            self.show_snack(f"Successfully created {len(temp_files)} symbolic links in temporary directory")
+            self.show_snack(f"Successfully copied {len(temp_files)} files to temporary directory")
             
             # Refresh the view to show updated button states
             self.page.go("/file_selector")
         else:
-            self.show_snack("Failed to create symbolic links in temporary directory", is_error=True)
+            self.show_snack("Failed to copy files to temporary directory", is_error=True)
     
     def auto_perform_file_picker_workflow(self, file_paths):
-        """Automatically create links for directly selected files."""
+        """Automatically copy files for directly selected files."""
         if not file_paths:
             return
         
         temp_files = []
         
         try:
-            # Create symbolic links WITHOUT showing progress dialog
+            # Copy files WITHOUT showing progress dialog
             # (the operation is fast enough not to need it)
-            self.logger.info(f"Auto-workflow: Creating symbolic links for {len(file_paths)} files")
+            self.logger.info(f"Auto-workflow: Copying {len(file_paths)} files")
             temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(file_paths)
             
             # Update selected_file_paths to point to temp files so derivatives are created there
@@ -668,15 +668,15 @@ class FilePickerSelectorView(FileSelectorView):
         
         # Show results and update UI
         if temp_files:
-            self.show_snack(f"Successfully created links for {len(file_paths)} files.")
-            self.logger.info(f"Auto-workflow: Complete. Created {len(temp_files)} symbolic links.")
+            self.show_snack(f"Successfully copied {len(file_paths)} files.")
+            self.logger.info(f"Auto-workflow: Complete. Copied {len(temp_files)} files.")
             # Update the temp status display
             try:
                 self.update_temp_status_display()
             except Exception as ex:
                 self.logger.error(f"Error updating temp status display: {ex}")
         else:
-            self.show_snack("Failed to create symbolic links for selected files", is_error=True)
+            self.show_snack("Failed to copy selected files", is_error=True)
 
 
 class CSVSelectorView(FileSelectorView):
@@ -1169,7 +1169,7 @@ class CSVSelectorView(FileSelectorView):
                     on_click=self.open_search_dir_picker
                 ),
                 ft.Container(height=10),
-                ft.Text("Selecting a directory will automatically perform fuzzy search and create symbolic links to selected files.",
+                ft.Text("Selecting a directory will automatically perform fuzzy search and copy selected files.",
                        size=11, color=colors['secondary_text'], italic=True)
             ], spacing=5, alignment=ft.CrossAxisAlignment.START)
             
@@ -1688,7 +1688,7 @@ class CSVSelectorView(FileSelectorView):
             self.auto_perform_workflow(e.path)
     
     def auto_perform_workflow(self, search_dir):
-        """Automatically perform fuzzy search and link creation."""
+        """Automatically perform fuzzy search and file copying."""
         selected_files = self.page.session.get("selected_file_paths") or []
         
         if not selected_files:
@@ -1699,7 +1699,7 @@ class CSVSelectorView(FileSelectorView):
         progress_dialog = ft.AlertDialog(
             title=ft.Text("Processing Files"),
             content=ft.Column([
-                ft.Text("Performing fuzzy search and creating links..."),
+                ft.Text("Performing fuzzy search and copying files..."),
                 ft.ProgressRing()
             ], tight=True, height=100),
             modal=True
@@ -1721,7 +1721,7 @@ class CSVSelectorView(FileSelectorView):
                 self.page.update()
                 return
             
-            # Create symbolic links for matched files and placeholder files for unmatched
+            # Copy matched files and create placeholder files for unmatched
             matched_files = self.page.session.get("selected_file_paths") or []
             full_path_files = [f for f in matched_files if f and os.path.isabs(f) and os.path.exists(f)]
             
@@ -1735,7 +1735,7 @@ class CSVSelectorView(FileSelectorView):
             if full_path_files or file_name_2_matched:
                 # Copy file_name_1 files first
                 if full_path_files:
-                    self.logger.info(f"Auto-workflow: Creating symbolic links for {len(full_path_files)} file_name_1 matched files")
+                    self.logger.info(f"Auto-workflow: Copying {len(full_path_files)} file_name_1 matched files")
                     temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(full_path_files)
                 else:
                     temp_files = []
@@ -1744,7 +1744,7 @@ class CSVSelectorView(FileSelectorView):
                 
                 # Copy file_name_2 files separately (they go to OBJS but not in selected_file_paths for derivatives)
                 if file_name_2_matched:
-                    self.logger.info(f"Auto-workflow: Creating symbolic links for {len(file_name_2_matched)} file_name_2 files (for S3 upload only, not derivative processing)")
+                    self.logger.info(f"Auto-workflow: Copying {len(file_name_2_matched)} file_name_2 files (for S3 upload only, not derivative processing)")
                     # Use the same temp directory if it exists
                     if not temp_dir:
                         temp_files_2, temp_file_info_2, temp_dir = self.copy_files_to_temp_directory(file_name_2_matched)
@@ -1917,6 +1917,9 @@ class CSVSelectorView(FileSelectorView):
             if file_name_2_data:
                 self.logger.info(f"Auto-workflow: Searching for {len(file_name_2_data)} file_name_2 files")
                 
+                # Create a set of file_name_1 matched paths for duplicate checking
+                file_name_1_paths_set = set(matched_paths)
+                
                 # Only search for file_name_2 where file_name_1 was successfully matched
                 for idx, filename_2 in enumerate(file_name_2_data):
                     # Skip empty file_name_2 values
@@ -1933,15 +1936,19 @@ class CSVSelectorView(FileSelectorView):
                         )
                         
                         if match_path_2 and ratio_2 >= 90:
-                            file_name_2_matched_paths.append(match_path_2)
-                            self.logger.info(f"Auto-workflow: Found file_name_2 match for '{filename_2}': {match_path_2} ({ratio_2}% match)")
+                            # Check if this path is already matched by file_name_1 (avoid duplicates)
+                            if match_path_2 in file_name_1_paths_set:
+                                self.logger.warning(f"Auto-workflow: Skipping file_name_2 '{filename_2}' - already matched as file_name_1: {match_path_2}")
+                            else:
+                                file_name_2_matched_paths.append(match_path_2)
+                                self.logger.info(f"Auto-workflow: Found file_name_2 match for '{filename_2}': {match_path_2} ({ratio_2}% match)")
                         else:
                             if ratio_2 == 0:
                                 self.logger.warning(f"Auto-workflow: No file_name_2 match found for '{filename_2}' (0% match)")
                             else:
                                 self.logger.warning(f"Auto-workflow: No file_name_2 match found for '{filename_2}' ({ratio_2}% match - below 90% threshold)")
                 
-                self.logger.info(f"Auto-workflow: Found {len(file_name_2_matched_paths)} file_name_2 matches")
+                self.logger.info(f"Auto-workflow: Found {len(file_name_2_matched_paths)} file_name_2 matches (after duplicate removal)")
                 self.page.session.set("file_name_2_matched_paths", file_name_2_matched_paths)
             
             self.logger.info(f"Auto-workflow: Fuzzy search completed. Found {matches_found} matches out of {len(selected_files)} files")
@@ -2117,7 +2124,7 @@ class CSVSelectorView(FileSelectorView):
             self.page.update()
     
     def on_copy_csv_matches_to_temp(self, e):
-        """Handle creating symbolic links for CSV matched files in temporary directory."""
+        """Handle copying CSV matched files to temporary directory."""
         matched_files = self.page.session.get("selected_file_paths") or []
         
         # Filter to only include matched files (absolute paths)
@@ -2125,14 +2132,14 @@ class CSVSelectorView(FileSelectorView):
         
         if not full_path_files:
             self.page.snack_bar = ft.SnackBar(
-                content=ft.Text("No matched files found to link"),
+                content=ft.Text("No matched files found to copy"),
                 bgcolor=ft.Colors.RED_400
             )
             self.page.snack_bar.open = True
             self.page.update()
             return
         
-        self.logger.info(f"Creating symbolic links for {len(full_path_files)} matched files in temporary directory...")
+        self.logger.info(f"Copying {len(full_path_files)} matched files to temporary directory...")
         temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(full_path_files)
         
         # Update selected_file_paths to point to temp files so derivatives are created there
@@ -2141,7 +2148,7 @@ class CSVSelectorView(FileSelectorView):
         
         if temp_files:
             self.page.snack_bar = ft.SnackBar(
-                content=ft.Text(f"Successfully created {len(temp_files)} symbolic links for matched files in temporary directory"),
+                content=ft.Text(f"Successfully copied {len(temp_files)} matched files to temporary directory"),
                 bgcolor=ft.Colors.GREEN_400
             )
             self.page.snack_bar.open = True
@@ -2151,7 +2158,7 @@ class CSVSelectorView(FileSelectorView):
             self.update_csv_display()
         else:
             self.page.snack_bar = ft.SnackBar(
-                content=ft.Text("Failed to create symbolic links for matched files in temporary directory"),
+                content=ft.Text("Failed to copy matched files to temporary directory"),
                 bgcolor=ft.Colors.RED_400
             )
             self.page.snack_bar.open = True

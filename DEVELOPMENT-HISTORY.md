@@ -14,6 +14,44 @@ This document chronicles the development of the Manage Digital Ingest applicatio
 
 ## Recent Updates
 
+### File Copying Instead of Symbolic Links
+
+**Date**: January 2026
+
+**Change**: Modified the file copying workflow to create actual file copies in the temporary OBJS directory instead of symbolic links.
+
+**Details**:
+- Changed `copy_files_to_temp_directory()` in `file_selector_view.py`:
+  - Previously: Created symbolic links using `os.symlink()` pointing to original file locations
+  - Now: Creates actual file copies using `shutil.copy2()` in the OBJS directory
+  - Preserves file metadata (timestamps, permissions) via `copy2()`
+  - Maintains collision detection and filename sanitization
+- Updated all related log messages and UI text to reflect "copying files" instead of "creating symbolic links"
+- This ensures that:
+  - **file_name_1** files are copied to OBJS for derivative generation and S3 upload
+  - **file_name_2** files are copied to OBJS for S3 upload (but not processed for derivatives)
+  - Each file appears only once in OBJS directory (no duplicates)
+  - Temporary directory contains actual files ready for S3 upload
+
+**Files Modified**:
+- `views/file_selector_view.py`: Changed from symlink creation to file copying
+
+**Rationale**: 
+- S3 upload requires actual files, not symbolic links
+- Ensures portability of the temporary directory structure
+- Simplifies the workflow by having all files in one location
+
+**Example**:
+- Input CSV with:
+  - file_name_1: `grinnell_3482_OBJ.jpg`
+  - file_name_2: `grinnell_3482_OBJ.tiff`
+- Result in `storage/temp/file_selector_YYYYMMDD_HHMMSS_XXXXXXXX/OBJS/`:
+  - `grinnell_3482_OBJ.jpg` (actual file copy)
+  - `grinnell_3482_OBJ.tiff` (actual file copy)
+- Only the .jpg file proceeds to derivative processing (TN/SMALL generation)
+
+---
+
 ### Audio Derivatives Generation
 
 **Date**: January 2026
