@@ -441,6 +441,75 @@ dc:identifier: http://hdl.handle.net/11084/1729123456
 **Files Modified**:
 - `utils.py`: Rewrote `calculate_string_similarity()` and `perform_fuzzy_search()`
 
+### Multi-Valued Field Expansion in values.csv
+
+**Date**: January 2026
+
+**Feature**: When creating values.csv, the system now automatically expands multi-valued metadata fields (those containing `|` separators) into multiple single-valued columns with the same column name, following Alma Digital import requirements.
+
+**Implementation**:
+- Based on expansion logic from `../migrate-MODS-to-dcterms/expand-csv.py`
+- Analyzes all columns to find maximum number of `|` delimited values
+- Creates duplicate column headings for fields needing expansion
+- Splits cell values on `|` and distributes across expanded columns
+- Escapes double quotes properly for CSV format
+- Applied in both `update_csv_view.py` and `storage_view.py`
+
+**Example**:
+```
+Before expansion:
+dc:subject
+"Dogs | Cats | Birds"
+
+After expansion:
+dc:subject, dc:subject, dc:subject
+"Dogs", "Cats", "Birds"
+```
+
+**Behavior**:
+1. Analyze CSV data to count max `|` occurrences per column
+2. Generate expanded headings (duplicate column names)
+3. For each data row, split values on `|`
+4. Distribute split values across expanded columns
+5. Empty columns for values that don't exist
+6. Log expansion details (which columns expanded and to how many)
+
+**Files Modified**:
+- `views/update_csv_view.py`: Added expansion to `save_values_csv()`
+- `views/storage_view.py`: Added expansion to `save_values_csv()`
+
+---
+
+### Automatic file_name_2 Matching and Copying
+
+**Date**: January 2026
+
+**Feature**: When file_name_1 matched files are copied to the temporary OBJS directory, the system now automatically searches for and copies corresponding file_name_2 files.
+
+**Implementation**:
+- Extracts both file_name_1 and file_name_2 column data from CSV during file selection
+- After matching file_name_1 files, automatically searches for file_name_2 files for the same rows
+- Only searches for file_name_2 when:
+  - file_name_2 value is not empty
+  - Corresponding file_name_1 was successfully matched
+- Copies both file_name_1 and file_name_2 files to OBJS directory
+- **Important**: file_name_2 files are copied for S3 upload purposes but are NOT included in derivative processing
+- Only file_name_1 files have thumbnails and derivatives generated
+- Reports counts separately in success messages
+
+**Behavior**:
+1. Extract file_name_1 and file_name_2 data from CSV
+2. Perform fuzzy search for all file_name_1 files
+3. For each successfully matched file_name_1, check if there's a file_name_2 value
+4. Search for and copy file_name_2 files to OBJS (stored separately from derivative processing list)
+5. Generate derivatives ONLY for file_name_1 files
+6. Report: "Created X file_name_1, Y file_name_2 file(s)"
+
+**Files Modified**:
+- `views/file_selector_view.py`: Added file_name_2 extraction and matching logic
+
+---
+
 ### Exact Match Priority in Fuzzy Search
 
 **Date**: January 2026

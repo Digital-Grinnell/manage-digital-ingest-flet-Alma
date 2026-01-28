@@ -633,8 +633,9 @@ class StorageView(BaseView):
     
     def save_values_csv(self):
         """
-        Save a values.csv file in the temp directory.
-        This file has no comment rows and collection_id blanked (except last row).
+        Save a values.csv file in the temp directory with multi-valued field expansion.
+        This file has no comment rows, collection_id blanked (except last row), 
+        and multi-valued fields (containing |) expanded into multiple single-valued columns.
         """
         try:
             # Get temp directory from session
@@ -661,11 +662,65 @@ class StorageView(BaseView):
                 df.iloc[-1, df.columns.get_loc('collection_id')] = last_collection_id
                 self.logger.info(f"Blanked out collection_id column in values.csv (except last row: {last_collection_id})")
             
-            # Save values.csv to temp directory
-            values_csv_path = os.path.join(temp_dir, "values.csv")
-            df.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
+            # EXPANSION LOGIC: Analyze and expand multi-valued fields (with | separators)
+            # Step 1: Count max occurrences of | in each column
+            heading_counter = {}
+            for col in df.columns:
+                max_count = 1  # At least 1 column for every heading
+                for value in df[col].fillna('').astype(str):
+                    if len(value) > 0:
+                        parts = value.count('|') + 1
+                        if parts > max_count:
+                            max_count = parts
+                heading_counter[col] = max_count
             
-            self.logger.info(f"Saved values.csv to: {values_csv_path} ({len(df)} rows)")
+            # Log expansion details
+            expanded_columns = {col: count for col, count in heading_counter.items() if count > 1}
+            if expanded_columns:
+                self.logger.info(f"Expanding multi-valued columns: {expanded_columns}")
+            
+            # Step 2: Build expanded headings (duplicate column names for multi-valued fields)
+            expanded_headings = []
+            for col in df.columns:
+                count = heading_counter[col]
+                for _ in range(count):
+                    expanded_headings.append(col)
+            
+            self.logger.info(f"Original columns: {len(df.columns)}, Expanded columns: {len(expanded_headings)}")
+            
+            # Step 3: Create expanded data rows
+            import csv
+            values_csv_path = os.path.join(temp_dir, "values.csv")
+            with open(values_csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                
+                # Write expanded headings
+                writer.writerow(expanded_headings)
+                
+                # Calculate first column position for each original column in expanded format
+                first_col_positions = [0]
+                for i, col in enumerate(df.columns):
+                    count = max(heading_counter[col], 1)
+                    first_col_positions.append(first_col_positions[i] + count)
+                
+                # Write expanded data rows
+                for _, row in df.iterrows():
+                    new_row = [''] * len(expanded_headings)
+                    
+                    for col_idx, col in enumerate(df.columns):
+                        cell_value = str(row[col]) if pd.notna(row[col]) else ''
+                        # Split on | and distribute across expanded columns
+                        values = cell_value.split('|')
+                        first_pos = first_col_positions[col_idx]
+                        
+                        for val_idx, val in enumerate(values):
+                            # Escape double quotes
+                            escaped_val = val.replace('\\','\\\\').replace('"',r'\"')
+                            new_row[first_pos + val_idx] = escaped_val
+                    
+                    writer.writerow(new_row)
+            
+            self.logger.info(f"Saved expanded values.csv to: {values_csv_path} ({len(df)} rows)")
             return True
             
         except Exception as e:

@@ -122,6 +122,8 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
    - 10-point penalty applied for numeric-only differences (e.g., file_52.pdf vs file_25.pdf)
    - Each CSV entry is matched to the best available file
    - Exhaustive search ensures true best match is found
+   - **Automatic file_name_2 matching**: After matching file_name_1 files, the system automatically searches for and includes corresponding file_name_2 files for the same rows
+   - **Note**: file_name_2 files are copied to OBJS for S3 upload but are NOT processed for derivative generation (only file_name_1 files get thumbnails)
 2. Review matched files and their similarity scores
 3. Adjust similarity threshold if needed:
    - Default: 90%

@@ -1549,6 +1549,12 @@ class CSVSelectorView(FileSelectorView):
                     original_count = len(column_data)
                     self.page.session.set("original_filename_count", original_count)
                     self.logger.info(f"Extracted {len(column_data)} potential filenames from file_name_1")
+                    
+                    # Also extract file_name_2 data if available
+                    if "file_name_2" in columns:
+                        file_name_2_data = self.extract_column_data(file_path, "file_name_2")
+                        self.page.session.set("file_name_2_data", file_name_2_data)
+                        self.logger.info(f"Extracted {len(file_name_2_data)} potential filenames from file_name_2")
                 else:
                     # Clear previous selection for non-Alma or if file_name_1 not found
                     self.page.session.set("selected_csv_column", None)
@@ -1589,6 +1595,8 @@ class CSVSelectorView(FileSelectorView):
         self.page.session.set("csv_validation_error", None)
         self.page.session.set("csv_unmatched_headings", None)
         self.page.session.set("selected_file_paths", [])
+        self.page.session.set("file_name_2_data", [])
+        self.page.session.set("file_name_2_matched_paths", [])
         self.page.session.set("search_directory", None)
         self.page.session.set("original_filename_count", None)
         self.page.session.set("matched_file_count", None)
@@ -1623,6 +1631,12 @@ class CSVSelectorView(FileSelectorView):
                     original_count = len(column_data)
                     self.page.session.set("original_filename_count", original_count)
                     self.logger.info(f"Extracted {len(column_data)} potential filenames from file_name_1")
+                    
+                    # Also extract file_name_2 data if available
+                    if "file_name_2" in columns:
+                        file_name_2_data = self.extract_column_data(current_csv_file, "file_name_2")
+                        self.page.session.set("file_name_2_data", file_name_2_data)
+                        self.logger.info(f"Extracted {len(file_name_2_data)} potential filenames from file_name_2")
             else:
                 self.page.session.set("csv_columns", None)
                 self.page.session.set("csv_read_error", error)
@@ -1714,10 +1728,31 @@ class CSVSelectorView(FileSelectorView):
             # Get unmatched files
             unmatched_filenames = self.page.session.get("unmatched_filenames") or []
             
+            # Get file_name_2 matched files (if any)
+            file_name_2_matched = self.page.session.get("file_name_2_matched_paths") or []
+            
             # Handle matched files
-            if full_path_files:
-                self.logger.info(f"Auto-workflow: Creating symbolic links for {len(full_path_files)} matched files")
-                temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(full_path_files)
+            if full_path_files or file_name_2_matched:
+                # Copy file_name_1 files first
+                if full_path_files:
+                    self.logger.info(f"Auto-workflow: Creating symbolic links for {len(full_path_files)} file_name_1 matched files")
+                    temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(full_path_files)
+                else:
+                    temp_files = []
+                    temp_file_info = []
+                    temp_dir = None
+                
+                # Copy file_name_2 files separately (they go to OBJS but not in selected_file_paths for derivatives)
+                if file_name_2_matched:
+                    self.logger.info(f"Auto-workflow: Creating symbolic links for {len(file_name_2_matched)} file_name_2 files (for S3 upload only, not derivative processing)")
+                    # Use the same temp directory if it exists
+                    if not temp_dir:
+                        temp_files_2, temp_file_info_2, temp_dir = self.copy_files_to_temp_directory(file_name_2_matched)
+                    else:
+                        # Reuse existing temp_dir
+                        temp_files_2, temp_file_info_2, _ = self.copy_files_to_temp_directory(file_name_2_matched)
+                    # Store file_name_2 temp files separately - they won't be processed for derivatives
+                    self.page.session.set("file_name_2_temp_files", temp_files_2)
             else:
                 # No matched files, but we may still need to create temp directory for placeholders
                 temp_files = []
@@ -1759,11 +1794,14 @@ class CSVSelectorView(FileSelectorView):
             self.page.update()
             
             # Show result
-            total_count = len(full_path_files) + placeholder_count
+            file_name_2_count = len(file_name_2_matched)
+            total_count = len(full_path_files) + file_name_2_count + placeholder_count
             if total_count > 0:
                 message_parts = []
                 if len(full_path_files) > 0:
-                    message_parts.append(f"{len(full_path_files)} matched")
+                    message_parts.append(f"{len(full_path_files)} file_name_1")
+                if file_name_2_count > 0:
+                    message_parts.append(f"{file_name_2_count} file_name_2")
                 if placeholder_count > 0:
                     message_parts.append(f"{placeholder_count} placeholder(s)")
                 
@@ -1871,6 +1909,40 @@ class CSVSelectorView(FileSelectorView):
             # Update session with matched paths and CSV filenames
             self.page.session.set("selected_file_paths", [p for p in matched_paths if p is not None])
             self.page.session.set("csv_filenames_for_matched", csv_filenames_for_matched)
+            
+            # Now search for file_name_2 files if available
+            file_name_2_data = self.page.session.get("file_name_2_data") or []
+            file_name_2_matched_paths = []
+            
+            if file_name_2_data:
+                self.logger.info(f"Auto-workflow: Searching for {len(file_name_2_data)} file_name_2 files")
+                
+                # Only search for file_name_2 where file_name_1 was successfully matched
+                for idx, filename_2 in enumerate(file_name_2_data):
+                    # Skip empty file_name_2 values
+                    if not filename_2 or filename_2.strip() == '':
+                        continue
+                    
+                    # Check if corresponding file_name_1 was matched (same row index)
+                    if idx < len(matched_paths) and matched_paths[idx] is not None:
+                        # Search for file_name_2
+                        match_path_2, ratio_2 = utils.perform_fuzzy_search(
+                            search_dir, 
+                            filename_2,
+                            threshold=90
+                        )
+                        
+                        if match_path_2 and ratio_2 >= 90:
+                            file_name_2_matched_paths.append(match_path_2)
+                            self.logger.info(f"Auto-workflow: Found file_name_2 match for '{filename_2}': {match_path_2} ({ratio_2}% match)")
+                        else:
+                            if ratio_2 == 0:
+                                self.logger.warning(f"Auto-workflow: No file_name_2 match found for '{filename_2}' (0% match)")
+                            else:
+                                self.logger.warning(f"Auto-workflow: No file_name_2 match found for '{filename_2}' ({ratio_2}% match - below 90% threshold)")
+                
+                self.logger.info(f"Auto-workflow: Found {len(file_name_2_matched_paths)} file_name_2 matches")
+                self.page.session.set("file_name_2_matched_paths", file_name_2_matched_paths)
             
             self.logger.info(f"Auto-workflow: Fuzzy search completed. Found {matches_found} matches out of {len(selected_files)} files")
             return results

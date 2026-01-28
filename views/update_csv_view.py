@@ -148,7 +148,8 @@ class UpdateCSVView(BaseView):
     
     def save_values_csv(self, values_csv_path):
         """
-        Save a values.csv file with comment rows removed and minimal quoting.
+        Save a values.csv file with comment rows removed, minimal quoting, and multi-valued fields expanded.
+        This expands fields containing | separators into multiple single-valued columns with the same name.
         This is specifically for the values.csv output file.
         
         Args:
@@ -178,9 +179,64 @@ class UpdateCSVView(BaseView):
                     csv_data_filtered.iloc[-1, csv_data_filtered.columns.get_loc('collection_id')] = last_collection_id
                     self.logger.info(f"Blanked out collection_id column in values.csv (except last row: {last_collection_id})")
                 
-                # Save with minimal quoting
-                csv_data_filtered.to_csv(values_csv_path, index=False, encoding='utf-8', quoting=0)
-                self.logger.info(f"Saved values.csv to: {values_csv_path} ({len(csv_data_filtered)} rows)")
+                # EXPANSION LOGIC: Analyze and expand multi-valued fields (with | separators)
+                # Step 1: Count max occurrences of | in each column
+                heading_counter = {}
+                for col in csv_data_filtered.columns:
+                    max_count = 1  # At least 1 column for every heading
+                    for value in csv_data_filtered[col].fillna('').astype(str):
+                        if len(value) > 0:
+                            parts = value.count('|') + 1
+                            if parts > max_count:
+                                max_count = parts
+                    heading_counter[col] = max_count
+                
+                # Log expansion details
+                expanded_columns = {col: count for col, count in heading_counter.items() if count > 1}
+                if expanded_columns:
+                    self.logger.info(f"Expanding multi-valued columns: {expanded_columns}")
+                
+                # Step 2: Build expanded headings (duplicate column names for multi-valued fields)
+                expanded_headings = []
+                for col in csv_data_filtered.columns:
+                    count = heading_counter[col]
+                    for _ in range(count):
+                        expanded_headings.append(col)
+                
+                self.logger.info(f"Original columns: {len(csv_data_filtered.columns)}, Expanded columns: {len(expanded_headings)}")
+                
+                # Step 3: Create expanded data rows
+                import csv
+                with open(values_csv_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+                    
+                    # Write expanded headings
+                    writer.writerow(expanded_headings)
+                    
+                    # Calculate first column position for each original column in expanded format
+                    first_col_positions = [0]
+                    for i, col in enumerate(csv_data_filtered.columns):
+                        count = max(heading_counter[col], 1)
+                        first_col_positions.append(first_col_positions[i] + count)
+                    
+                    # Write expanded data rows
+                    for _, row in csv_data_filtered.iterrows():
+                        new_row = [''] * len(expanded_headings)
+                        
+                        for col_idx, col in enumerate(csv_data_filtered.columns):
+                            cell_value = str(row[col]) if pd.notna(row[col]) else ''
+                            # Split on | and distribute across expanded columns
+                            values = cell_value.split('|')
+                            first_pos = first_col_positions[col_idx]
+                            
+                            for val_idx, val in enumerate(values):
+                                # Escape double quotes
+                                escaped_val = val.replace('\\','\\\\').replace('"',r'\"')
+                                new_row[first_pos + val_idx] = escaped_val
+                        
+                        writer.writerow(new_row)
+                
+                self.logger.info(f"Saved expanded values.csv to: {values_csv_path} ({len(csv_data_filtered)} rows)")
                 return True
             return False
         except Exception as e:
