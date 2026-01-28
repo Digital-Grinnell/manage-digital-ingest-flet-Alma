@@ -26,7 +26,7 @@ A comprehensive guide for using the Manage Digital Ingest application to prepare
 
 ### Key Features
 
-- **Fuzzy Filename Matching**: Automatically matches images to CSV metadata entries with configurable similarity threshold
+- **Intelligent Filename Matching**: Prioritizes exact matches (including extension), then uses fuzzy matching with configurable similarity threshold
 - **Automatic Compound Detection**: Detects multi-part objects and generates parent/child metadata structure
 - **Handle URL Generation**: Automatically creates dc:identifier Handle URLs for all digital objects
 - **Derivative Generation**: Creates TN (thumbnails) and audio derivatives (.wav to .mp3 conversion)
@@ -116,7 +116,9 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
 
 ##### 3.3 Run Fuzzy Search
 1. Click **"Run Fuzzy Search"**
-   - Application matches image filenames to CSV metadata using sequence-based similarity
+   - Application first attempts to find exact matches (including file extension)
+   - If no exact match exists, uses fuzzy matching with sequence-based similarity
+   - Fuzzy matching normalizes filenames (ignores extension, treats underscores/hyphens/spaces as equivalent)
    - 10-point penalty applied for numeric-only differences (e.g., file_52.pdf vs file_25.pdf)
    - Each CSV entry is matched to the best available file
    - Exhaustive search ensures true best match is found

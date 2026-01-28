@@ -441,6 +441,26 @@ dc:identifier: http://hdl.handle.net/11084/1729123456
 **Files Modified**:
 - `utils.py`: Rewrote `calculate_string_similarity()` and `perform_fuzzy_search()`
 
+### Exact Match Priority in Fuzzy Search
+
+**Date**: January 2026
+
+**Problem**: When both `.jpg` and `.tiff` versions of a file exist (e.g., `grinnell_4941_OBJ.jpg` and `grinnell_4941_OBJ.tiff`), fuzzy matching was selecting the `.tiff` even when CSV specified `.jpg`, because extension was ignored during matching.
+
+**Solution**:
+- Modified `perform_fuzzy_search()` to first check for exact matches (including extension)
+- Only proceeds with fuzzy matching if no exact match is found
+- Ensures CSV-specified file extensions are respected when files exist
+
+**Behavior**:
+1. **Step 1**: Search for exact filename match (including extension) → return immediately if found
+2. **Step 2**: If no exact match, perform fuzzy search (ignoring extension)
+
+**Files Modified**:
+- `utils.py`: Added exact match check before fuzzy matching logic
+
+---
+
 ### PyMuPDF Deprecation Warning
 
 **Date**: November 2025

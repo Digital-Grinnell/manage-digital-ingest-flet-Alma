@@ -117,6 +117,9 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
     Recursively search for files in base_path and find the best match for target_filename
     using difflib.SequenceMatcher for proper sequence-based similarity.
     
+    First attempts to find an exact match (including extension). Only if no exact match
+    is found does it proceed with fuzzy matching.
+    
     Normalizes filenames before comparison by treating underscores, hyphens, and spaces
     as equivalent to improve matching accuracy.
     
@@ -134,6 +137,15 @@ def perform_fuzzy_search(base_path, target_filename, threshold=90):
     import re
     
     try:
+        # STEP 1: First try to find an exact match (including extension)
+        for root, dirs, files in os.walk(base_path):
+            for filename in files:
+                if filename == target_filename:
+                    exact_match_path = os.path.join(root, filename)
+                    logging.info(f"Found exact match for '{target_filename}': {exact_match_path}")
+                    return (exact_match_path, 100)
+        
+        # STEP 2: No exact match found, proceed with fuzzy matching
         best_match_path = None
         best_match_ratio = 0
         
