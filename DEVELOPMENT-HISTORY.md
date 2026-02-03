@@ -14,6 +14,46 @@ This document chronicles the development of the Manage Digital Ingest applicatio
 
 ## Recent Updates
 
+### Enhanced Compound Object Detection for Trailing Numbers
+
+**Date**: February 3, 2026
+
+**Change**: Improved compound object detection to handle files where part 1 has a trailing number that could be misinterpreted.
+
+**Details**:
+- Added third detection pass in `generate_csv_rows()` method of `storage_view.py`
+- **Problem Solved**: Files like "Name Not Given 85.wav" and "Name Not Given 85_2.WAV" were not being grouped correctly
+  - First pass would parse "Name Not Given 85" as part 85 of "Name Not Given" group
+  - Meanwhile "Name Not Given 85_2" would be parsed as part 2 of "Name Not Given 85" group
+  - Result: Two separate incomplete groups instead of one compound object
+- **Solution**: Third pass examines each grouped file to check if its full filename matches another group's basename
+  - If match found, file is regrouped as part 1 of the matching group
+  - Original incorrect group assignment is removed
+- Works with both underscore and space separators
+- Handles complex cases like "Silverman and Fardman 15" + "Silverman and Fardman 15 2" + "Silverman and Fardman 15 3"
+
+**Files Modified**:
+- `views/storage_view.py`: Added regrouping logic (third pass) in compound detection
+- `ALMA-COMPOUND-HANDLING.md`: Added Pattern 3 documentation and Example 4
+
+**Examples**:
+
+*Example 1: Audio Interview with Trailing Number*
+```
+Input:  Name Not Given 85.wav, Name Not Given 85_2.WAV
+Result: Compound "Name Not Given 85" with 2 parts
+```
+
+*Example 2: Multi-part Recording with Trailing Number*
+```
+Input:  Silverman and Fardman 15.mp3 (part 1)
+        Silverman and Fardman 15 2.WAV (part 2)  
+        Silverman and Fardman 15 3.WAV (part 3)
+Result: Compound "Silverman and Fardman 15" with 3 parts
+```
+
+---
+
 ### File Copying Instead of Symbolic Links
 
 **Date**: January 2026

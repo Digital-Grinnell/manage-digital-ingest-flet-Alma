@@ -460,7 +460,7 @@ class FilePickerSelectorView(FileSelectorView):
             file_picker.pick_files(
                 dialog_title="Select Image, PDF, or Audio Files",
                 allow_multiple=True,
-                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "pdf", "wav"],
+                allowed_extensions=["jpg", "jpeg", "png", "gif", "bmp", "tiff", "tif", "pdf", "wav", "mp3"],
                 initial_directory=initial_dir
             )
         

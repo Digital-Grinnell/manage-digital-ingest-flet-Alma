@@ -57,7 +57,7 @@ class StorageView(BaseView):
             self.show_snack("Failed to load CSV headings", is_error=True)
             return
         
-        # First pass: Detect compound objects by grouping files with _<integer> pattern
+        # First pass: Detect compound objects by grouping files with _<integer> or <space><integer> pattern
         compound_groups = {}
         standalone_files = []
         files_with_basename = {}  # Track files that might be implicit part 1
@@ -90,6 +90,30 @@ class StorageView(BaseView):
             else:
                 # No numbered parts found, treat as standalone
                 standalone_files.append(base_file_path)
+        
+        # Third pass: Regroup files where a "part 1" with trailing number exists in compound_groups
+        # E.g., "Silverman and Fardman 15" (part=15 of "Silverman and Fardman") should actually be
+        # part 1 of "Silverman and Fardman 15" group (which has parts 2 and 3)
+        regrouped = {}
+        for base_name in list(compound_groups.keys()):
+            parts = compound_groups[base_name]
+            # Check if any part in this group could actually be part 1 of another group
+            for part_num, file_path in parts[:]:  # Iterate over copy
+                filename_noext = os.path.splitext(os.path.basename(file_path))[0]
+                # Check if this filename (which is base_name + separator + part_num) exists as a basename in compound_groups
+                if filename_noext in compound_groups and filename_noext != base_name:
+                    # This file should be part 1 of the filename_noext group, not part of base_name group
+                    if filename_noext not in regrouped:
+                        regrouped[filename_noext] = []
+                    regrouped[filename_noext].append((1, file_path))  # It's part 1 of the other group
+                    parts.remove((part_num, file_path))
+                    self.logger.info(f"Regrouped '{os.path.basename(file_path)}' as part 1 of compound '{filename_noext}'")
+        
+        # Apply regrouping
+        for new_base, new_parts in regrouped.items():
+            if new_base in compound_groups:
+                # Prepend part 1 to the existing group
+                compound_groups[new_base] = new_parts + compound_groups[new_base]
         
         # Sort compound groups by part number
         for base_name in compound_groups:

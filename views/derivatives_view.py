@@ -9,6 +9,7 @@ from views.base_view import BaseView
 import os
 import shutil
 from thumbnail import generate_thumbnail, generate_pdf_thumbnail
+from transcript_helper import TranscriptHelper, open_transcript_workflow
 
 
 class DerivativesView(BaseView):
@@ -105,16 +106,13 @@ class DerivativesView(BaseView):
                 msg = f"  ✓ JPG conversion complete: {jpg_filename} ({jpg_size_mb:.2f} MB)"
                 self.logger.info(msg)
                 if hasattr(self, 'log_view') and self.log_view:
-                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
                     self.page.update()
             except:
                 msg = f"  ✓ JPG conversion complete: {jpg_filename}"
                 self.logger.info(msg)
                 if hasattr(self, 'log_view') and self.log_view:
-                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
-                    self.page.update()
-            
-            # 2. Create thumbnail using standard thumbnail generation
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
             msg = f"  Creating thumbnail for {root}..."
             self.logger.info(msg)
             if hasattr(self, 'log_view') and self.log_view:
@@ -144,7 +142,7 @@ class DerivativesView(BaseView):
             msg = f"  ✓ Thumbnail created: {thumbnail_filename}"
             self.logger.info(msg)
             if hasattr(self, 'log_view') and self.log_view:
-                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
                 self.page.update()
             
             return True, f"Created JPG: {jpg_filename}, Thumbnail: {thumbnail_filename}"
@@ -156,12 +154,13 @@ class DerivativesView(BaseView):
     
     def create_audio_derivatives(self, file_path, temp_base_dir, root):
         """
-        Create derivatives for audio files (.wav):
-        1. Convert .wav to high-quality .mp3 in OBJS directory
+        Create derivatives for audio files (.wav or .mp3):
+        1. Convert .wav to high-quality .mp3 in OBJS directory (if input is .wav)
         2. Create thumbnail from gc_media_TN.jpeg asset
+        3. Offer transcript creation workflow for the MP3 file
         
         Args:
-            file_path: Path to the source .wav file
+            file_path: Path to the source audio file (.wav or .mp3)
             temp_base_dir: Base temp directory
             root: Root filename (without extension)
             
@@ -182,73 +181,103 @@ class DerivativesView(BaseView):
             tn_dir = os.path.join(temp_base_dir, 'TN')
             os.makedirs(tn_dir, exist_ok=True)
             
-            # 1. Convert .wav to high-quality .mp3 in OBJS
+            # Determine if input is WAV or MP3
+            _, ext = os.path.splitext(file_path)
+            is_wav = ext.lower() == '.wav'
+            is_mp3 = ext.lower() == '.mp3'
+            
+            # 1. Convert .wav to high-quality .mp3 in OBJS (or use existing MP3)
             mp3_filename = f"{root}.mp3"
             mp3_path = os.path.join(objs_dir, mp3_filename)
             
-            # Get file size for logging
-            try:
-                wav_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-                msg = f"  Starting audio conversion: {os.path.basename(file_path)} ({wav_size_mb:.2f} MB)"
+            if is_wav:
+                # Get file size for logging
+                try:
+                    wav_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                    msg = f"  Starting audio conversion: {os.path.basename(file_path)} ({wav_size_mb:.2f} MB)"
+                    self.logger.info(msg)
+                    if hasattr(self, 'log_view') and self.log_view:
+                        self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                        self.page.update()
+                except:
+                    msg = f"  Starting audio conversion: {os.path.basename(file_path)}"
+                    self.logger.info(msg)
+                    if hasattr(self, 'log_view') and self.log_view:
+                        self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
+                        self.page.update()
+                
+                # Use ffmpeg for high-quality conversion
+                # -q:a 0 means highest quality VBR MP3
+                ffmpeg_cmd = [
+                    'ffmpeg',
+                    '-i', file_path,
+                    '-q:a', '0',  # Highest quality VBR
+                    '-map', 'a',  # Map audio stream
+                    '-y',  # Overwrite output file
+                    mp3_path
+                ]
+                
+                msg = "  Converting to high-quality .mp3 (VBR) - this may take a moment for large files..."
                 self.logger.info(msg)
                 if hasattr(self, 'log_view') and self.log_view:
                     self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
                     self.page.update()
-            except:
-                msg = f"  Starting audio conversion: {os.path.basename(file_path)}"
+                
+                result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+                
+                if result.returncode != 0:
+                    error_msg = f"FFmpeg conversion failed: {result.stderr}"
+                    self.logger.error(error_msg)
+                    return False, error_msg
+                
+                # Log success with file size
+                try:
+                    mp3_size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
+                    msg = f"  ✓ MP3 conversion complete: {mp3_filename} ({mp3_size_mb:.2f} MB)"
+                    self.logger.info(msg)
+                    if hasattr(self, 'log_view') and self.log_view:
+                        self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
+                        self.page.update()
+                except:
+                    msg = f"  ✓ MP3 conversion complete: {mp3_filename}"
+                    self.logger.info(msg)
+                    if hasattr(self, 'log_view') and self.log_view:
+                        self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
+                        self.page.update()
+            elif is_mp3:
+                # MP3 file provided directly - copy to OBJS directory
+                import shutil
+                msg = f"  Using provided MP3 file: {os.path.basename(file_path)}"
                 self.logger.info(msg)
                 if hasattr(self, 'log_view') and self.log_view:
                     self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
                     self.page.update()
-            
-            # Use ffmpeg for high-quality conversion
-            # -q:a 0 means highest quality VBR MP3
-            ffmpeg_cmd = [
-                'ffmpeg',
-                '-i', file_path,
-                '-q:a', '0',  # Highest quality VBR
-                '-map', 'a',  # Map audio stream
-                '-y',  # Overwrite output file
-                mp3_path
-            ]
-            
-            msg = "  Converting to high-quality .mp3 (VBR) - this may take a moment for large files..."
-            self.logger.info(msg)
-            if hasattr(self, 'log_view') and self.log_view:
-                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
-                self.page.update()
-            
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                error_msg = f"FFmpeg conversion failed: {result.stderr}"
-                self.logger.error(error_msg)
-                return False, error_msg
-            
-            # Log success with file size
-            try:
-                mp3_size_mb = os.path.getsize(mp3_path) / (1024 * 1024)
-                msg = f"  ✓ MP3 conversion complete: {mp3_filename} ({mp3_size_mb:.2f} MB)"
+                
+                # If file is already in OBJS, no need to copy
+                if os.path.abspath(file_path) != os.path.abspath(mp3_path):
+                    shutil.copy2(file_path, mp3_path)
+                    msg = f"  ✓ MP3 file ready: {mp3_filename}"
+                else:
+                    msg = f"  ✓ MP3 file already in place: {mp3_filename}"
                 self.logger.info(msg)
                 if hasattr(self, 'log_view') and self.log_view:
-                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
-                    self.page.update()
-            except:
-                msg = f"  ✓ MP3 conversion complete: {mp3_filename}"
-                self.logger.info(msg)
-                if hasattr(self, 'log_view') and self.log_view:
-                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
                     self.page.update()
             
-            # 2. Copy gc_media_TN.jpeg as thumbnail
+            # 2. Use gc_media_TN.jpeg as thumbnail for all audio files (WAV/MP3)
             msg = f"  Creating audio thumbnail for {root}..."
             self.logger.info(msg)
             if hasattr(self, 'log_view') and self.log_view:
                 self.log_view.controls.append(ft.Text(msg, size=11, color=colors['secondary_text']))
                 self.page.update()
             
-            assets_dir = os.path.join(os.getcwd(), 'assets')
-            source_thumbnail = os.path.join(assets_dir, 'gc_media_TN.jpeg')
+            # Use absolute path to ensure thumbnail is always found
+            source_thumbnail = '/Users/mcfatem/GitHub/manage-digital-ingest-flet-Alma/assets/gc_media_TN.jpeg'
+            
+            # Fallback to relative path if absolute doesn't exist (for portability)
+            if not os.path.exists(source_thumbnail):
+                assets_dir = os.path.join(os.getcwd(), 'assets')
+                source_thumbnail = os.path.join(assets_dir, 'gc_media_TN.jpeg')
             
             if not os.path.exists(source_thumbnail):
                 error_msg = f"Thumbnail template not found: {source_thumbnail}"
@@ -273,8 +302,11 @@ class DerivativesView(BaseView):
             msg = f"  ✓ Audio thumbnail created: {thumbnail_filename}"
             self.logger.info(msg)
             if hasattr(self, 'log_view') and self.log_view:
-                self.log_view.controls.append(ft.Text(msg, size=11, color=colors['success']))
+                self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
                 self.page.update()
+            
+            # Offer transcript creation workflow
+            self.offer_transcript_creation(mp3_path, root)
             
             return True, f"Created MP3: {mp3_filename}, Thumbnail: {thumbnail_filename}"
             
@@ -297,7 +329,7 @@ class DerivativesView(BaseView):
         Create a single derivative for a file based on mode and type.
         
         Args:
-            file_path: Path to the source file
+            file_path: Path to the source file (should be sanitized temp file)
             mode: Mode to use - always 'Alma' for this application
             derivative_type: Type of derivative ('thumbnail' or 'small')
             
@@ -305,13 +337,8 @@ class DerivativesView(BaseView):
             tuple: (success: bool, result: str)
         """
         try:
-            # Check for spaces in the file path
-            if any(char.isspace() for char in file_path):
-                error_msg = f"File path '{file_path}' contains spaces! This should not happen with temp files."
-                self.logger.error(error_msg)
-                return False, error_msg
-            
             # Parse file path components
+            # Note: File paths should already be sanitized by the file selector
             dirname, basename = os.path.split(file_path)
             root, ext = os.path.splitext(basename)
             
@@ -370,8 +397,8 @@ class DerivativesView(BaseView):
                         error_msg = f"Failed to create PDF thumbnail: {derivative_path}"
                         self.logger.error(error_msg)
                         return False, error_msg
-                elif ext.lower() == '.wav':
-                    # Handle audio files - convert to MP3 and create thumbnail
+                elif ext.lower() in ['.wav', '.mp3']:
+                    # Handle audio files - convert to MP3 (if WAV) and create thumbnail
                     success, message = self.create_audio_derivatives(file_path, temp_base_dir, root)
                     if success:
                         self.logger.info(f"Created audio derivatives: {message}")
@@ -503,19 +530,36 @@ class DerivativesView(BaseView):
                         error_count += 1
                         
                 elif current_mode == "Alma":
-                    # Create thumbnail only for Alma
+                    # Create derivatives for Alma
+                    # For audio files (WAV/MP3), this creates both MP3 and thumbnail
+                    # For images, this creates just the thumbnail
+                    _, ext = os.path.splitext(file_path)
+                    is_audio = ext.lower() in ['.wav', '.mp3']
+                    
                     thumbnail_success, thumbnail_result = self.create_single_derivative(
                         file_path, current_mode, 'thumbnail'
                     )
                     
                     if thumbnail_success:
-                        result_text = f"✅ {display_name} - Created thumbnail derivative"
-                        success_count += 1
-                        self.logger.info(f"Successfully created thumbnail for {file_path}")
+                        if is_audio:
+                            # Audio files create 2 derivatives: MP3 + thumbnail
+                            result_text = f"✅ {display_name} - Created MP3 and thumbnail derivatives"
+                            success_count += 2  # Count both MP3 and thumbnail
+                        else:
+                            # Image/PDF files create 1 derivative: thumbnail only
+                            result_text = f"✅ {display_name} - Created thumbnail derivative"
+                            success_count += 1
+                        self.logger.info(f"Successfully created derivatives for {file_path}")
                     else:
-                        result_text = f"❌ {display_name} - Failed to create thumbnail"
-                        self.logger.error(f"Thumbnail failed: {thumbnail_result}")
-                        error_count += 1
+                        if is_audio:
+                            # Failed to create audio derivatives (MP3 + thumbnail)
+                            result_text = f"❌ {display_name} - Failed to create derivatives"
+                            error_count += 2  # Count both MP3 and thumbnail as failed
+                        else:
+                            # Failed to create thumbnail
+                            result_text = f"❌ {display_name} - Failed to create thumbnail"
+                            error_count += 1
+                        self.logger.error(f"Derivative creation failed: {thumbnail_result}")
                 else:
                     result_text = f"❌ {display_name} - Unsupported mode: {current_mode}"
                     error_count += 1
@@ -548,10 +592,11 @@ class DerivativesView(BaseView):
             self.page.update()
         
         # Final summary
+        total_derivatives = success_count + error_count
         if not self.cancel_processing:
-            summary_text = f"\n✅ Processing complete!\nTotal: {total_files} | Success: {success_count} | Errors: {error_count}"
+            summary_text = f"\n✅ Processing complete!\nFiles: {total_files} | Derivatives Created: {success_count}/{total_derivatives} | Failed: {error_count}"
         else:
-            summary_text = f"\n⚠️ Processing cancelled!\nProcessed: {processed_count}/{total_files} | Success: {success_count} | Errors: {error_count}"
+            summary_text = f"\n⚠️ Processing cancelled!\nFiles Processed: {processed_count}/{total_files} | Derivatives Created: {success_count}/{total_derivatives} | Failed: {error_count}"
         
         self.log_view.controls.append(
             ft.Text(summary_text, size=14, weight=ft.FontWeight.BOLD, color=colors['primary_text'])
@@ -574,6 +619,147 @@ class DerivativesView(BaseView):
         self.page.update()
         
         self.logger.info("Processing completed, buttons reset")
+    
+    def offer_transcript_creation(self, mp3_path: str, root: str):
+        """
+        Offer the user the option to create a transcript from the MP3 file.
+        
+        Args:
+            mp3_path: Path to the MP3 file
+            root: Root filename (without extension)
+        """
+        try:
+            colors = self.get_theme_colors()
+            
+            # Check if transcript already exists
+            transcript_helper = TranscriptHelper(self.logger)
+            existing_transcript = transcript_helper.check_for_existing_transcript(mp3_path)
+            
+            if existing_transcript:
+                msg = f"  ℹ️  Transcript already exists: {os.path.basename(existing_transcript)}"
+                self.logger.info(msg)
+                if hasattr(self, 'log_view') and self.log_view:
+                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['info']))
+                    self.page.update()
+                return
+            
+            # Offer transcript creation
+            msg = f"  📝 TRANSCRIPT AVAILABLE for {os.path.basename(mp3_path)}"
+            self.logger.info(msg)
+            if hasattr(self, 'log_view') and self.log_view:
+                self.log_view.controls.append(ft.Text(msg, size=11, weight=ft.FontWeight.BOLD, color=colors['primary_text']))
+                
+                # Add clickable button to view instructions
+                def show_instructions(e):
+                    self.show_transcript_instructions(mp3_path)
+                
+                instruction_button = ft.ElevatedButton(
+                    "📖 View Transcription Instructions",
+                    icon=ft.Icons.DESCRIPTION,
+                    on_click=show_instructions,
+                    bgcolor=colors.get('accent', ft.Colors.BLUE),
+                    color=ft.Colors.WHITE
+                )
+                
+                self.log_view.controls.append(ft.Container(
+                    content=instruction_button,
+                    padding=ft.padding.only(left=20, top=5, bottom=5)
+                ))
+                self.page.update()
+                
+        except Exception as e:
+            self.logger.error(f"Error in offer_transcript_creation: {str(e)}")
+    
+    def show_transcript_instructions(self, mp3_path: str):
+        """
+        Display transcript creation instructions in a dialog.
+        
+        Args:
+            mp3_path: Path to the MP3 file
+        """
+        try:
+            # Get instructions from helper
+            success, instructions = open_transcript_workflow(mp3_path, self.logger)
+            
+            if not success:
+                self.logger.error(f"Failed to open transcript workflow: {instructions}")
+                return
+            
+            # Create dialog with instructions
+            def close_dialog(e):
+                dialog.open = False
+                self.page.update()
+            
+            def check_for_docx(e):
+                """Check for and process completed .docx transcript."""
+                transcript_helper = TranscriptHelper(self.logger)
+                directory = os.path.dirname(mp3_path)
+                base_name = os.path.splitext(os.path.basename(mp3_path))[0]
+                docx_path = os.path.join(directory, f"{base_name}.docx")
+                
+                colors = self.get_theme_colors()
+                
+                if os.path.exists(docx_path):
+                    # Process the transcript
+                    success, message = transcript_helper.parse_docx_transcript(docx_path)
+                    
+                    if success:
+                        # Show success message
+                        msg = f"✅ {message}"
+                        self.logger.info(msg)
+                        if hasattr(self, 'log_view') and self.log_view:
+                            self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
+                            self.page.update()
+                        
+                        # Close dialog
+                        close_dialog(e)
+                    else:
+                        # Show error
+                        if hasattr(self, 'log_view') and self.log_view:
+                            self.log_view.controls.append(ft.Text(
+                                f"❌ {message}",
+                                size=11,
+                                color=colors['error']
+                            ))
+                            self.page.update()
+                else:
+                    # File not found yet
+                    if hasattr(self, 'log_view') and self.log_view:
+                        self.log_view.controls.append(ft.Text(
+                            f"⏳ Transcript file not found yet: {base_name}.docx",
+                            size=11,
+                            color=colors['warning']
+                        ))
+                        self.log_view.controls.append(ft.Text(
+                            "   Please save your completed Word transcript with this exact filename.",
+                            size=10,
+                            color=colors['secondary_text']
+                        ))
+                        self.page.update()
+            
+            dialog = ft.AlertDialog(
+                modal=True,
+                title=ft.Text("🎙️ Microsoft Word Transcription Instructions", size=18, weight=ft.FontWeight.BOLD),
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Text(instructions, size=12, font_family="monospace", selectable=True)
+                    ], scroll=ft.ScrollMode.AUTO, spacing=10),
+                    width=700,
+                    height=500
+                ),
+                actions=[
+                    ft.TextButton("Check for Completed Transcript", on_click=check_for_docx),
+                    ft.TextButton("Close", on_click=close_dialog)
+                ],
+                actions_alignment=ft.MainAxisAlignment.END
+            )
+            
+            self.page.overlay.append(dialog)
+            dialog.open = True
+            self.page.update()
+            
+        except Exception as e:
+            self.logger.error(f"Error showing transcript instructions: {str(e)}")
     
     def interrupt_processing(self, e):
         """Interrupt the current processing operation."""

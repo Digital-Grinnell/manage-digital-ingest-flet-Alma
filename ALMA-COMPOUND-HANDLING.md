@@ -53,6 +53,22 @@ MyDocument_2.pdf    ← Part 2
 MyDocument_3.pdf    ← Part 3
 ```
 
+#### Pattern 3: Part 1 with Trailing Number
+When a file's basename ends with a number and other files use that full basename as their prefix:
+```
+Interview 85.wav      ← Treated as Part 1
+Interview 85 2.wav    ← Part 2
+Interview 85_3.WAV    ← Part 3
+```
+or
+```
+Silverman and Fardman 15.mp3    ← Treated as Part 1  
+Silverman and Fardman 15 2.WAV  ← Part 2
+Silverman and Fardman 15 3.WAV  ← Part 3
+```
+
+This handles cases where the "base name" itself contains a trailing number that could be misinterpreted as a part number.
+
 ### Detection Algorithm
 
 The detection process follows these steps:
@@ -69,11 +85,17 @@ The detection process follows these steps:
    - If match found: Insert as Part 1 of that compound group
    - If no match: Treat as standalone file
 
-3. **Validation**
+3. **Third Pass - Regrouping for Trailing Numbers**
+   - Examine each file in detected compound groups
+   - Check if the full filename (basename + separator + number) matches another group's basename
+   - If match found: Regroup as Part 1 of the matching group
+   - This handles cases like "Name 85" being part 1 of "Name 85" group (not part 85 of "Name" group)
+
+4. **Validation**
    - Only create compound objects for groups with **2 or more parts**
    - Groups with only 1 part are treated as standalone files
 
-4. **Sorting**
+5. **Sorting**
    - All parts within each compound group are sorted by part number
    - Ensures correct sequential ordering
 
@@ -113,6 +135,30 @@ Letter_1.pdf
 - Compound object "Book" with 2 children
 - Standalone file "Photo.png"
 - Standalone file "Letter_1.pdf" (only 1 part, doesn't meet minimum)
+
+#### Example 4: Trailing Number in Basename (Pattern 3)
+**Input Files:**
+```
+Name Not Given 85.wav
+Name Not Given 85_2.WAV
+```
+
+**Result:** 
+- Compound object "Name Not Given 85" with 2 children
+- First pass incorrectly groups "Name Not Given 85" as part 85 of "Name Not Given"
+- Third pass detects "Name Not Given 85" exists as a group basename and regroups
+- Final: Part 1 = "Name Not Given 85.wav", Part 2 = "Name Not Given 85_2.WAV"
+
+**Another Example:**
+```
+Silverman and Fardman 15.mp3
+Silverman and Fardman 15 2.WAV
+Silverman and Fardman 15 3.WAV
+```
+
+**Result:**
+- Compound object "Silverman and Fardman 15" with 3 children
+- Regrouping logic identifies the full basename match and corrects the grouping
 
 ## CSV Structure Created
 
