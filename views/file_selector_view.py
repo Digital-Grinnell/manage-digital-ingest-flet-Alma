@@ -78,12 +78,13 @@ class FileSelectorView(BaseView):
         # Rejoin the path
         return os.path.join(directory, sanitized_filename) if directory else sanitized_filename
     
-    def copy_files_to_temp_directory(self, file_paths):
+    def copy_files_to_temp_directory(self, file_paths, progress_callback=None):
         """
         Copy files with sanitized names to a temporary directory.
         
         Args:
             file_paths: List of file paths to copy
+            progress_callback: Optional function(current, total) to report progress
             
         Returns:
             tuple: (temp_file_paths: list, temp_file_info: list, temp_directory: str)
@@ -128,9 +129,14 @@ class FileSelectorView(BaseView):
             
             temp_file_paths = []
             temp_file_info = []
+            total_files = len(file_paths)
             
-            for original_path in file_paths:
+            for index, original_path in enumerate(file_paths):
                 try:
+                    # Update progress if callback provided
+                    if progress_callback:
+                        progress_callback(index, total_files)
+                    
                     # Skip empty or None paths
                     if not original_path or not os.path.exists(original_path):
                         self.logger.warning(f"Skipping non-existent file: {original_path}")
@@ -170,6 +176,10 @@ class FileSelectorView(BaseView):
                 except Exception as e:
                     self.logger.error(f"Failed to copy file {original_path}: {str(e)}")
                     continue
+            
+            # Final progress update
+            if progress_callback:
+                progress_callback(total_files, total_files)
             
             # Store in session
             self.page.session.set("temp_directory", temp_dir)
@@ -647,17 +657,41 @@ class FilePickerSelectorView(FileSelectorView):
             self.show_snack("Failed to copy files to temporary directory", is_error=True)
     
     def auto_perform_file_picker_workflow(self, file_paths):
-        """Automatically copy files for directly selected files."""
+        """Automatically copy files for directly selected files with progress indicator."""
         if not file_paths:
             return
         
         temp_files = []
         
+        # Create progress dialog
+        progress_bar = ft.ProgressBar(width=400, value=0)
+        progress_text = ft.Text(f"Copying 0/{len(file_paths)} files...", size=14)
+        
+        def close_progress_dialog(e=None):
+            progress_dialog.open = False
+            self.page.update()
+        
+        progress_dialog = ft.AlertDialog(
+            modal=True,
+            title=ft.Text("Copying Files"),
+            content=ft.Column([
+                progress_text,
+                progress_bar,
+            ], tight=True, height=80),
+        )
+        
+        self.page.dialog = progress_dialog
+        progress_dialog.open = True
+        self.page.update()
+        
         try:
-            # Copy files WITHOUT showing progress dialog
-            # (the operation is fast enough not to need it)
             self.logger.info(f"Auto-workflow: Copying {len(file_paths)} files")
-            temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(file_paths)
+            temp_files, temp_file_info, temp_dir = self.copy_files_to_temp_directory(
+                file_paths, 
+                progress_callback=lambda current, total: self._update_progress(
+                    progress_bar, progress_text, current, total
+                )
+            )
             
             # Update selected_file_paths to point to temp files so derivatives are created there
             if temp_files:
@@ -665,6 +699,9 @@ class FilePickerSelectorView(FileSelectorView):
             
         except Exception as ex:
             self.logger.error(f"Error during file picker automatic workflow: {str(ex)}")
+        finally:
+            # Close progress dialog
+            close_progress_dialog()
         
         # Show results and update UI
         if temp_files:
@@ -677,6 +714,15 @@ class FilePickerSelectorView(FileSelectorView):
                 self.logger.error(f"Error updating temp status display: {ex}")
         else:
             self.show_snack("Failed to copy selected files", is_error=True)
+    
+    def _update_progress(self, progress_bar, progress_text, current, total):
+        """Update progress bar and text during file copying."""
+        try:
+            progress_bar.value = current / total if total > 0 else 0
+            progress_text.value = f"Copying {current}/{total} files..."
+            self.page.update()
+        except Exception as e:
+            self.logger.error(f"Error updating progress: {e}")
 
 
 class CSVSelectorView(FileSelectorView):

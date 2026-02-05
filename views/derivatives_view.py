@@ -728,7 +728,7 @@ class DerivativesView(BaseView):
                         self.log_view.controls.append(ft.Text(
                             f"⏳ Transcript file not found yet: {base_name}.docx",
                             size=11,
-                            color=colors['warning']
+                            color=ft.Colors.ORANGE_600
                         ))
                         self.log_view.controls.append(ft.Text(
                             "   Please save your completed Word transcript with this exact filename.",
@@ -737,11 +737,25 @@ class DerivativesView(BaseView):
                         ))
                         self.page.update()
             
+            # Create link button to open Word Online
+            def open_word_online(e):
+                import webbrowser
+                webbrowser.open('https://word.new')
+            
             dialog = ft.AlertDialog(
                 modal=True,
                 title=ft.Text("🎙️ Microsoft Word Transcription Instructions", size=18, weight=ft.FontWeight.BOLD),
                 content=ft.Container(
                     content=ft.Column([
+                        ft.Row([
+                            ft.Text("Step 1: ", size=12, weight=ft.FontWeight.BOLD),
+                            ft.TextButton(
+                                "Open Word Online (https://word.new)",
+                                on_click=open_word_online,
+                                style=ft.ButtonStyle(padding=ft.padding.all(0)),
+                            )
+                        ], spacing=5),
+                        ft.Divider(height=1, thickness=1),
                         ft.Text(instructions, size=12, font_family="monospace", selectable=True)
                     ], scroll=ft.ScrollMode.AUTO, spacing=10),
                     width=700,

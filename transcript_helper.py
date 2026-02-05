@@ -55,17 +55,13 @@ class TranscriptHelper:
             Formatted instruction text
         """
         filename = os.path.basename(mp3_path)
-        instructions = f"""
-╔═══════════════════════════════════════════════════════════════════╗
-║          MICROSOFT WORD TRANSCRIPTION INSTRUCTIONS                ║
-╚═══════════════════════════════════════════════════════════════════╝
-
-Audio File: {filename}
+        instructions = f"""Audio File: {filename}
 Location: {os.path.dirname(mp3_path)}
 
 STEPS TO CREATE TRANSCRIPT:
-─────────────────────────────────────────────────────────────────────
-1. Open Microsoft Word (Office 365 subscription required)
+
+1. Use the "Open Word Online" link above to launch Microsoft Word
+   (Office 365 subscription required)
 
 2. Click on the "Home" tab
 
@@ -96,7 +92,6 @@ OPTIONAL: Edit speaker names in the .docx file before saving:
 
 Note: You must have an active Microsoft 365 subscription with internet
       connection to use Word's transcription feature.
-─────────────────────────────────────────────────────────────────────
 """
         return instructions
     
