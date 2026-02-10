@@ -14,6 +14,7 @@ import re
 import shutil
 import tempfile
 import uuid
+import json
 from datetime import datetime
 
 
@@ -183,6 +184,10 @@ class FileSelectorView(BaseView):
             
             # Store in session
             self.page.session.set("temp_directory", temp_dir)
+            # Update tracker for shutdown cleanup
+            tracker = self.page.session.get("_update_temp_dir_tracker")
+            if tracker:
+                tracker(temp_dir)
             self.page.session.set("temp_objs_directory", objs_dir)
             self.page.session.set("temp_tn_directory", tn_dir)
             self.page.session.set("temp_small_directory", small_dir)
@@ -198,8 +203,39 @@ class FileSelectorView(BaseView):
     
     def clear_temp_directory(self):
         """Clear the temporary directory and session data."""
-        # Check if temp directory is protected
-        import json
+        # Check if temp directory preservation is enabled
+        preserve_temp = self.page.session.get("preserve_temp_directory", False)
+        backup_dir = self.page.session.get("temp_backup_directory", "")
+        
+        temp_dir = self.page.session.get("temp_directory")
+        
+        if preserve_temp and backup_dir and temp_dir and os.path.exists(temp_dir):
+            try:
+                # Create backup directory if it doesn't exist
+                os.makedirs(backup_dir, exist_ok=True)
+                
+                # Create a timestamped backup directory name
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                temp_dir_name = os.path.basename(temp_dir)
+                backup_path = os.path.join(backup_dir, f"{temp_dir_name}_backup_{timestamp}")
+                
+                # Copy the entire temp directory to the backup location
+                shutil.copytree(temp_dir, backup_path, dirs_exist_ok=True)
+                self.logger.info(f"Backed up temporary directory to: {backup_path}")
+                
+                # Show snackbar notification
+                if hasattr(self.page, 'snack_bar'):
+                    self.page.snack_bar = ft.SnackBar(
+                        content=ft.Text(f"Temp directory backed up to: {backup_path}"),
+                        bgcolor=ft.Colors.GREEN_700
+                    )
+                    self.page.snack_bar.open = True
+                    self.page.update()
+            except Exception as e:
+                self.logger.error(f"Failed to backup temporary directory: {str(e)}")
+        
+        # Check if temp directory is protected (legacy protection mechanism)
         try:
             persistent_file = "storage/data/persistent_session.json"
             if os.path.exists(persistent_file):
@@ -211,7 +247,6 @@ class FileSelectorView(BaseView):
         except Exception as e:
             self.logger.warning(f"Could not check temp directory protection: {e}")
         
-        temp_dir = self.page.session.get("temp_directory")
         if temp_dir and os.path.exists(temp_dir):
             try:
                 shutil.rmtree(temp_dir)
@@ -221,6 +256,10 @@ class FileSelectorView(BaseView):
         
         # Clear session data
         self.page.session.set("temp_directory", None)
+        # Update tracker for shutdown cleanup
+        tracker = self.page.session.get("_update_temp_dir_tracker")
+        if tracker:
+            tracker(None)
         self.page.session.set("temp_files", [])
         self.page.session.set("temp_file_info", [])
     
@@ -362,6 +401,8 @@ class FilePickerSelectorView(FileSelectorView):
         self.selected_files = []
         self.selected_files_list = None
         self.temp_status_container = None  # Store reference to temp status display
+        self.file_picker_button = None  # Store reference to file picker button
+        self.clear_button = None  # Store reference to clear button
     
     def load_last_directory(self):
         """Load the last used directory from persistent storage."""
@@ -440,8 +481,9 @@ class FilePickerSelectorView(FileSelectorView):
                     directory = os.path.dirname(file_paths[0])
                     self.save_last_directory(directory)
                     
-                    # Store selected file paths in page session
-                    self.page.session.set("selected_file_paths", file_paths)
+                    # Don't set selected_file_paths yet - wait until files are copied to temp
+                    # Store original paths temporarily for processing
+                    self.page.session.set("original_file_paths_for_copy", file_paths)
                     self.logger.info(f"Selected {len(file_paths)} file(s)")
                 
                 # Update the UI to show selected files
@@ -504,6 +546,18 @@ class FilePickerSelectorView(FileSelectorView):
         # Create temp status display and store reference
         self.temp_status_container = self.create_temp_status_display(colors)
         
+        # Create buttons and store references
+        self.file_picker_button = ft.ElevatedButton(
+            "Open File Picker",
+            icon=ft.Icons.FOLDER_OPEN,
+            on_click=open_file_picker
+        )
+        self.clear_button = ft.ElevatedButton(
+            "Clear Selection",
+            icon=ft.Icons.CLEAR,
+            on_click=lambda e: self.clear_selection()
+        )
+        
         return ft.Column([
             ft.Row([
                 ft.Text(f"File Selector - {self.selector_type}", size=24, weight=ft.FontWeight.BOLD),
@@ -518,16 +572,8 @@ class FilePickerSelectorView(FileSelectorView):
                    size=12, color=colors['secondary_text'], italic=True),
             ft.Container(height=8),
             ft.Row([
-                ft.ElevatedButton(
-                    "Open File Picker",
-                    icon=ft.Icons.FOLDER_OPEN,
-                    on_click=open_file_picker
-                ),
-                ft.ElevatedButton(
-                    "Clear Selection",
-                    icon=ft.Icons.CLEAR,
-                    on_click=lambda e: self.clear_selection()
-                )
+                self.file_picker_button,
+                self.clear_button
             ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
             ft.Container(height=8),
             ft.Text("A temporary directory of sanitized file copies will be populated with selected files.", 
@@ -572,6 +618,7 @@ class FilePickerSelectorView(FileSelectorView):
         """Clear the selected files."""
         self.selected_files = []
         self.page.session.set("selected_file_paths", [])
+        self.page.session.set("original_file_paths_for_copy", [])
         if self.selected_files_list:
             self.selected_files_list.controls.clear()
         self.clear_temp_directory()  # Also clear temp directory
@@ -636,7 +683,8 @@ class FilePickerSelectorView(FileSelectorView):
     
     def on_copy_files_to_temp(self, e):
         """Handle copying files to temporary directory."""
-        file_paths = self.page.session.get("selected_file_paths") or []
+        # Check for original file paths first (from FilePicker), then fall back to selected_file_paths
+        file_paths = self.page.session.get("original_file_paths_for_copy") or self.page.session.get("selected_file_paths") or []
         if not file_paths:
             self.show_snack("No files selected to copy", is_error=True)
             return
@@ -663,9 +711,34 @@ class FilePickerSelectorView(FileSelectorView):
         
         temp_files = []
         
-        # Create progress dialog
+        # Disable navigation and buttons during file copying to prevent race conditions
+        original_appbar = self.page.appbar
+        if original_appbar:
+            # Disable all action buttons
+            for action in original_appbar.actions:
+                if isinstance(action, ft.IconButton):
+                    action.disabled = True
+            self.page.update()
+        
+        # Disable file picker buttons
+        if self.file_picker_button:
+            self.file_picker_button.disabled = True
+        if self.clear_button:
+            self.clear_button.disabled = True
+        if hasattr(self, 'file_picker_button') or hasattr(self, 'clear_button'):
+            self.page.update()
+        
+        self.logger.info("Navigation and buttons disabled during file copying")
+        
+        # Create blocking progress dialog
         progress_bar = ft.ProgressBar(width=400, value=0)
         progress_text = ft.Text(f"Copying 0/{len(file_paths)} files...", size=14)
+        warning_text = ft.Text(
+            "⚠️ Please wait - all navigation is disabled during file copying",
+            size=12,
+            color=ft.Colors.ORANGE_700,
+            italic=True
+        )
         
         def close_progress_dialog(e=None):
             progress_dialog.open = False
@@ -673,11 +746,13 @@ class FilePickerSelectorView(FileSelectorView):
         
         progress_dialog = ft.AlertDialog(
             modal=True,
-            title=ft.Text("Copying Files"),
+            title=ft.Text("Copying Files to Temporary Storage"),
             content=ft.Column([
+                warning_text,
+                ft.Container(height=10),
                 progress_text,
                 progress_bar,
-            ], tight=True, height=80),
+            ], tight=True, height=120),
         )
         
         self.page.dialog = progress_dialog
@@ -702,10 +777,27 @@ class FilePickerSelectorView(FileSelectorView):
         finally:
             # Close progress dialog
             close_progress_dialog()
+            
+            # Re-enable navigation
+            if original_appbar:
+                for action in original_appbar.actions:
+                    if isinstance(action, ft.IconButton):
+                        action.disabled = False
+                self.page.update()
+            
+            # Re-enable file picker buttons
+            if self.file_picker_button:
+                self.file_picker_button.disabled = False
+            if self.clear_button:
+                self.clear_button.disabled = False
+            if hasattr(self, 'file_picker_button') or hasattr(self, 'clear_button'):
+                self.page.update()
+            
+            self.logger.info("Navigation and buttons re-enabled after file copying")
         
         # Show results and update UI
         if temp_files:
-            self.show_snack(f"Successfully copied {len(file_paths)} files.")
+            self.show_snack(f"Successfully copied {len(file_paths)} files. You can now proceed to create derivatives.")
             self.logger.info(f"Auto-workflow: Complete. Copied {len(temp_files)} files.")
             # Update the temp status display
             try:
@@ -818,6 +910,10 @@ class CSVSelectorView(FileSelectorView):
                 
                 # Store in session
                 self.page.session.set("temp_directory", temp_dir)
+                # Update tracker for shutdown cleanup
+                tracker = self.page.session.get("_update_temp_dir_tracker")
+                if tracker:
+                    tracker(temp_dir)
                 self.page.session.set("temp_objs_directory", objs_dir)
                 self.page.session.set("temp_tn_directory", tn_dir)
                 self.page.session.set("temp_small_directory", small_dir)
@@ -1121,16 +1217,18 @@ class CSVSelectorView(FileSelectorView):
                 
                 # Show processing results if a column is selected
                 if current_selected_column:
-                    selected_files = self.page.session.get("selected_file_paths") or []
+                    # Get CSV filenames and processed temp files
+                    csv_filenames = self.page.session.get("csv_filenames_to_search") or []
+                    temp_files = self.page.session.get("selected_file_paths") or []
                     
                     # Get original count - should be set when column is selected
                     original_count = self.page.session.get("original_filename_count")
                     
-                    # Use original count if available, otherwise current count
+                    # Use original count if available, otherwise CSV filenames count
                     if original_count is not None:
                         extracted_filename_count = original_count
                     else:
-                        extracted_filename_count = len(selected_files)
+                        extracted_filename_count = len(csv_filenames)
                     
             else:
                 columns_content.controls.extend([
@@ -1141,14 +1239,14 @@ class CSVSelectorView(FileSelectorView):
             # Determine subtitle based on completion status
             if current_selected_column:
                 # Get extracted filename count for subtitle
-                selected_files = self.page.session.get("selected_file_paths") or []
+                csv_filenames = self.page.session.get("csv_filenames_to_search") or []
                 original_count = self.page.session.get("original_filename_count")
                 
-                # Use original count if available, otherwise current count
+                # Use original count if available, otherwise CSV filenames count
                 if original_count is not None:
                     extracted_count = original_count
                 else:
-                    extracted_count = len(selected_files)
+                    extracted_count = len(csv_filenames)
                 
                 column_subtitle = f"✅ Selected '{current_selected_column}' - extracted {extracted_count} potential filenames"
             elif current_csv_error:
@@ -1170,7 +1268,8 @@ class CSVSelectorView(FileSelectorView):
         
         # === STEP 3: Fuzzy Search ===
         if current_selected_column:
-            selected_files = self.page.session.get("selected_file_paths") or []
+            csv_filenames = self.page.session.get("csv_filenames_to_search") or []
+            temp_files = self.page.session.get("selected_file_paths") or []
             
             # Get original count and search statistics
             original_count = self.page.session.get("original_filename_count")
@@ -1178,21 +1277,11 @@ class CSVSelectorView(FileSelectorView):
             if search_completed is None:
                 search_completed = False
             
-            # Use original count if available, otherwise current count
+            # Use original count if available, otherwise CSV filenames count
             if original_count is not None:
                 extracted_filename_count = original_count
             else:
-                extracted_filename_count = len(selected_files)
-            
-            # Check if files have been matched (full paths vs just filenames)
-            has_full_paths = any(os.path.isabs(f) for f in selected_files if f)
-            
-            # Debug: Show what types of paths we have
-            absolute_paths = [f for f in selected_files if f and os.path.isabs(f)]
-            relative_paths = [f for f in selected_files if f and not os.path.isabs(f)]
-            print(f"Debug paths - Absolute: {len(absolute_paths)}, Relative: {len(relative_paths)}")
-            if len(selected_files) > 0:
-                print(f"First 3 files: {selected_files[:3]}")
+                extracted_filename_count = len(csv_filenames)
             
             # Get search statistics
             matched_count = self.page.session.get("matched_file_count")
@@ -1203,7 +1292,7 @@ class CSVSelectorView(FileSelectorView):
                 display_matched_count = matched_count
             else:
                 display_original_count = extracted_filename_count
-                display_matched_count = len([f for f in selected_files if f and os.path.isabs(f)]) if has_full_paths else 0
+                display_matched_count = len(temp_files) if temp_files else 0
             
             search_content_column = ft.Column([
                 ft.Text(f"Search directory: {search_directory or 'Not selected'}", 
@@ -1239,9 +1328,9 @@ class CSVSelectorView(FileSelectorView):
                 
                 # Show matched files
                 matched_ratios = self.page.session.get("matched_ratios") or []
-                self.logger.info(f"Display: selected_files has {len(selected_files)} items, matched_ratios has {len(matched_ratios)} items")
+                self.logger.info(f"Display: temp_files has {len(temp_files)} items, matched_ratios has {len(matched_ratios)} items")
                 
-                if selected_files and len(selected_files) > 0:
+                if temp_files and len(temp_files) > 0:
                     # Create copy to clipboard function for matched files
                     def copy_matched_to_clipboard(e):
                         selected = self.page.session.get("selected_file_paths") or []
@@ -1588,9 +1677,12 @@ class CSVSelectorView(FileSelectorView):
                     self.page.session.set("selected_csv_column", "file_name_1")
                     self.logger.info("Alma mode: Automatically selected 'file_name_1' column")
                     
-                    # Extract data from the column
+                    # Extract data from the column - these are filenames to search for, not actual paths yet
                     column_data = self.extract_column_data(file_path, "file_name_1")
-                    self.page.session.set("selected_file_paths", column_data)
+                    # Store in a separate variable since these are search targets, not file paths
+                    self.page.session.set("csv_filenames_to_search", column_data)
+                    # Clear selected_file_paths until files are found and copied to temp
+                    self.page.session.set("selected_file_paths", [])
                     # Set the original count when we first extract the filenames
                     original_count = len(column_data)
                     self.page.session.set("original_filename_count", original_count)
@@ -1735,7 +1827,8 @@ class CSVSelectorView(FileSelectorView):
     
     def auto_perform_workflow(self, search_dir):
         """Automatically perform fuzzy search and file copying."""
-        selected_files = self.page.session.get("selected_file_paths") or []
+        # Get filenames to search for from CSV
+        selected_files = self.page.session.get("csv_filenames_to_search") or []
         
         if not selected_files:
             self.logger.warning("No files available for automatic workflow")
@@ -1768,7 +1861,8 @@ class CSVSelectorView(FileSelectorView):
                 return
             
             # Copy matched files and create placeholder files for unmatched
-            matched_files = self.page.session.get("selected_file_paths") or []
+            # Get the matched original paths (not from selected_file_paths which should only have temp paths)
+            matched_files = self.page.session.get("matched_original_paths") or []
             full_path_files = [f for f in matched_files if f and os.path.isabs(f) and os.path.exists(f)]
             
             # Get unmatched files
@@ -1812,6 +1906,10 @@ class CSVSelectorView(FileSelectorView):
                     temp_dir = os.path.join(temp_base_dir, f"file_selector_{session_id}")
                     os.makedirs(temp_dir, exist_ok=True)
                     self.page.session.set("temp_directory", temp_dir)
+                    # Update tracker for shutdown cleanup
+                    tracker = self.page.session.get("_update_temp_dir_tracker")
+                    if tracker:
+                        tracker(temp_dir)
                     self.logger.info(f"Created temporary directory for placeholders: {temp_dir}")
             
             # Handle unmatched files - create placeholders and update CSV
@@ -1952,8 +2050,9 @@ class CSVSelectorView(FileSelectorView):
             self.page.session.set("unmatched_filenames", unmatched_filenames)
             self.page.session.set("search_completed", True)
             
-            # Update session with matched paths and CSV filenames
-            self.page.session.set("selected_file_paths", [p for p in matched_paths if p is not None])
+            # Store matched paths temporarily for copying, but DON'T update selected_file_paths yet
+            # selected_file_paths should only be set to temp paths after files are copied
+            self.page.session.set("matched_original_paths", [p for p in matched_paths if p is not None])
             self.page.session.set("csv_filenames_for_matched", csv_filenames_for_matched)
             
             # Now search for file_name_2 files if available
@@ -2007,7 +2106,8 @@ class CSVSelectorView(FileSelectorView):
     def do_fuzzy_search(self, e):
         """Perform fuzzy search using utils.perform_fuzzy_search_batch."""
         search_dir = self.page.session.get("search_directory")
-        selected_files = self.page.session.get("selected_file_paths") or []
+        # Get filenames to search for from CSV
+        selected_files = self.page.session.get("csv_filenames_to_search") or []
         
         if not search_dir or not selected_files:
             self.logger.error("Search directory or files not available")
@@ -2171,7 +2271,8 @@ class CSVSelectorView(FileSelectorView):
     
     def on_copy_csv_matches_to_temp(self, e):
         """Handle copying CSV matched files to temporary directory."""
-        matched_files = self.page.session.get("selected_file_paths") or []
+        # Get matched original paths (not from selected_file_paths which should only have temp paths)
+        matched_files = self.page.session.get("matched_original_paths") or []
         
         # Filter to only include matched files (absolute paths)
         full_path_files = [f for f in matched_files if f and os.path.isabs(f) and os.path.exists(f)]

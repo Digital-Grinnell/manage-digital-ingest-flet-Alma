@@ -1,5 +1,5 @@
 {
-  "last_directory": "/Users/mcfatem/Downloads/OralHistories-Reunion2025",
+  "last_directory": "/Volumes/DGIngest/Reunion2025/OralHistories",
   "window-height": 800,
   "selected_theme": "Light",
   "selected_mode": "Alma",
@@ -400,5 +400,7 @@
       "googlesheetsource": "",
       "dginfo": ""
     }
-  ]
+  ],
+  "preserve_temp_directory": true,
+  "temp_backup_directory": "/Users/mcfatem/Reunion-2025-Oral-Histories"
 }

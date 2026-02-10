@@ -147,6 +147,44 @@ class SettingsView(BaseView):
             self.logger.info(f"File option selected: {e.control.value}")
             self.log_all_current_selections()
         
+        # Temp directory preservation handlers
+        def on_preserve_temp_change(e):
+            """Handle temp directory preservation toggle"""
+            preserve_value = e.control.value
+            self.save_persistent_settings({"preserve_temp_directory": preserve_value})
+            self.page.session.set("preserve_temp_directory", preserve_value)
+            self.logger.info(f"Preserve temp directory: {preserve_value}")
+            # Update UI to show/hide directory picker
+            temp_dir_picker_container.visible = preserve_value
+            self.page.update()
+        
+        def on_temp_backup_dir_result(e: ft.FilePickerResultEvent):
+            """Handle directory picker result for temp backup location"""
+            if e.path:
+                backup_path = e.path
+                self.save_persistent_settings({"temp_backup_directory": backup_path})
+                self.page.session.set("temp_backup_directory", backup_path)
+                self.logger.info(f"Temp backup directory set to: {backup_path}")
+                temp_backup_dir_text.value = f"Backup Location: {backup_path}"
+                self.page.update()
+        
+        # Create directory picker for temp backup location
+        temp_backup_dir_picker = ft.FilePicker(on_result=on_temp_backup_dir_result)
+        self.page.overlay.append(temp_backup_dir_picker)
+        
+        def pick_temp_backup_directory(e):
+            """Open directory picker for temp backup location"""
+            temp_backup_dir_picker.get_directory_path(dialog_title="Select Temp Backup Directory")
+        
+        # Get current settings
+        current_preserve_temp = persistent_settings.get("preserve_temp_directory", False)
+        current_backup_dir = persistent_settings.get("temp_backup_directory", "")
+        
+        # Store in session if loaded from persistent
+        self.page.session.set("preserve_temp_directory", current_preserve_temp)
+        if current_backup_dir:
+            self.page.session.set("temp_backup_directory", current_backup_dir)
+        
         # Theme selector handler
         def on_theme_change(e):
             """Handle theme mode changes"""
@@ -227,12 +265,57 @@ class SettingsView(BaseView):
             bgcolor=colors['container_bg']
         )
         
+        # Temp directory preservation UI
+        temp_backup_dir_text = ft.Text(
+            f"Backup Location: {current_backup_dir}" if current_backup_dir else "No backup location selected",
+            size=12,
+            color=colors['secondary_text']
+        )
+        
+        temp_dir_picker_container = ft.Container(
+            content=ft.Column([
+                temp_backup_dir_text,
+                ft.ElevatedButton(
+                    "Select Backup Location",
+                    icon=ft.Icons.FOLDER_OPEN,
+                    on_click=pick_temp_backup_directory,
+                    bgcolor=ft.Colors.BLUE_700,
+                    color=ft.Colors.WHITE
+                ),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+            visible=current_preserve_temp
+        )
+        
+        temp_preservation_container = ft.Container(
+            content=ft.Column([
+                ft.Text("Temporary Directory Preservation", size=16, weight=ft.FontWeight.BOLD, color=colors['primary_text']),
+                ft.Text(
+                    "When enabled, copies of temporary processing directories will be saved before cleanup",
+                    size=12, italic=True, color=colors['secondary_text']
+                ),
+                ft.Container(height=5),
+                ft.Checkbox(
+                    label="Preserve temporary directories on shutdown",
+                    value=current_preserve_temp,
+                    on_change=on_preserve_temp_change
+                ),
+                temp_dir_picker_container
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.all(10),
+            border=ft.border.all(1, colors['border']),
+            border_radius=10,
+            margin=ft.margin.symmetric(vertical=4),
+            bgcolor=colors['container_bg']
+        )
+        
         return ft.Column([
             *self.create_page_header("Settings Page", include_log_button=False),
             mode_settings_container,
             file_selector_settings_container,
             ft.Divider(height=15, color=colors['divider']),
             theme_settings_container,
+            ft.Divider(height=15, color=colors['divider']),
+            temp_preservation_container,
             ft.Divider(height=15, color=colors['divider']),
             ft.Container(
                 content=ft.Column([

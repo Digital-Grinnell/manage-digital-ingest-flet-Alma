@@ -218,6 +218,74 @@ class MDIApplication:
         # Configure page
         page.title = "Manage Digital Ingest: Alma Edition"
         
+        # Use a closure variable to track temp directory without touching page.session during shutdown
+        current_temp_dir = {"path": None}
+        
+        def update_temp_dir_tracker(new_path):
+            """Update the temp directory tracker. Call this whenever temp_directory is set in session."""
+            current_temp_dir["path"] = new_path
+        
+        # Make the tracker updater available to views
+        page.session.set("_update_temp_dir_tracker", update_temp_dir_tracker)
+        
+        # Set up cleanup handler for app shutdown
+        def cleanup_on_shutdown(e):
+            """Handle cleanup when app is closing. Uses closure variable to avoid async session access."""
+            import os
+            import shutil
+            from datetime import datetime
+            import json
+            
+            print("App is shutting down - performing cleanup...")
+            
+            try:
+                # Use closure variable instead of page.session to avoid async operations
+                temp_dir = current_temp_dir.get("path")
+                
+                if temp_dir and os.path.exists(temp_dir):
+                    print(f"Found temporary directory: {temp_dir}")
+                    
+                    # Check if preservation is enabled
+                    preserve_temp = False
+                    backup_dir = ""
+                    
+                    try:
+                        persistent_path = os.path.join("_data", "persistent.json")
+                        if os.path.exists(persistent_path):
+                            with open(persistent_path, 'r', encoding='utf-8') as f:
+                                settings = json.load(f)
+                                preserve_temp = settings.get("preserve_temp_directory", False)
+                                backup_dir = settings.get("temp_backup_directory", "")
+                    except Exception as settings_ex:
+                        print(f"Could not load preservation settings: {settings_ex}")
+                    
+                    # Backup if enabled
+                    if preserve_temp and backup_dir:
+                        try:
+                            os.makedirs(backup_dir, exist_ok=True)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            temp_dir_name = os.path.basename(temp_dir)
+                            backup_path = os.path.join(backup_dir, f"{temp_dir_name}_backup_{timestamp}")
+                            shutil.copytree(temp_dir, backup_path, dirs_exist_ok=True)
+                            print(f"✓ Backed up temporary directory to: {backup_path}")
+                        except Exception as backup_ex:
+                            print(f"Error backing up temp directory: {backup_ex}")
+                    
+                    # Clean up temp directory
+                    try:
+                        shutil.rmtree(temp_dir)
+                        print(f"✓ Cleaned up temporary directory: {temp_dir}")
+                    except Exception as cleanup_ex:
+                        print(f"Error cleaning up temp directory: {cleanup_ex}")
+                else:
+                    print("No temporary directory to clean up")
+                    
+            except Exception as ex:
+                print(f"Error during cleanup: {ex}")
+        
+        # Register the cleanup handler
+        page.on_disconnect = cleanup_on_shutdown
+        
         # Load persistent settings from persistent storage
         window_height = 800  # Default value
         theme_mode = "Light"  # Default theme

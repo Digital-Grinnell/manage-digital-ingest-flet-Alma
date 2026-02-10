@@ -9,7 +9,8 @@ from views.base_view import BaseView
 import os
 import shutil
 from thumbnail import generate_thumbnail, generate_pdf_thumbnail
-from transcript_helper import TranscriptHelper, open_transcript_workflow
+# Transcript creation has been moved to: https://github.com/Digital-Grinnell/Oral-History-Workflow
+# from transcript_helper import TranscriptHelper, open_transcript_workflow
 
 
 class DerivativesView(BaseView):
@@ -157,7 +158,9 @@ class DerivativesView(BaseView):
         Create derivatives for audio files (.wav or .mp3):
         1. Convert .wav to high-quality .mp3 in OBJS directory (if input is .wav)
         2. Create thumbnail from gc_media_TN.jpeg asset
-        3. Offer transcript creation workflow for the MP3 file
+        
+        Note: Transcript creation has been moved to:
+        https://github.com/Digital-Grinnell/Oral-History-Workflow
         
         Args:
             file_path: Path to the source audio file (.wav or .mp3)
@@ -305,8 +308,8 @@ class DerivativesView(BaseView):
                 self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
                 self.page.update()
             
-            # Offer transcript creation workflow
-            self.offer_transcript_creation(mp3_path, root)
+            # Transcript creation has been moved to: https://github.com/Digital-Grinnell/Oral-History-Workflow
+            # self.offer_transcript_creation(mp3_path, root)
             
             return True, f"Created MP3: {mp3_filename}, Thumbnail: {thumbnail_filename}"
             
@@ -620,160 +623,28 @@ class DerivativesView(BaseView):
         
         self.logger.info("Processing completed, buttons reset")
     
-    def offer_transcript_creation(self, mp3_path: str, root: str):
-        """
-        Offer the user the option to create a transcript from the MP3 file.
-        
-        Args:
-            mp3_path: Path to the MP3 file
-            root: Root filename (without extension)
-        """
-        try:
-            colors = self.get_theme_colors()
-            
-            # Check if transcript already exists
-            transcript_helper = TranscriptHelper(self.logger)
-            existing_transcript = transcript_helper.check_for_existing_transcript(mp3_path)
-            
-            if existing_transcript:
-                msg = f"  ℹ️  Transcript already exists: {os.path.basename(existing_transcript)}"
-                self.logger.info(msg)
-                if hasattr(self, 'log_view') and self.log_view:
-                    self.log_view.controls.append(ft.Text(msg, size=11, color=colors['info']))
-                    self.page.update()
-                return
-            
-            # Offer transcript creation
-            msg = f"  📝 TRANSCRIPT AVAILABLE for {os.path.basename(mp3_path)}"
-            self.logger.info(msg)
-            if hasattr(self, 'log_view') and self.log_view:
-                self.log_view.controls.append(ft.Text(msg, size=11, weight=ft.FontWeight.BOLD, color=colors['primary_text']))
-                
-                # Add clickable button to view instructions
-                def show_instructions(e):
-                    self.show_transcript_instructions(mp3_path)
-                
-                instruction_button = ft.ElevatedButton(
-                    "📖 View Transcription Instructions",
-                    icon=ft.Icons.DESCRIPTION,
-                    on_click=show_instructions,
-                    bgcolor=colors.get('accent', ft.Colors.BLUE),
-                    color=ft.Colors.WHITE
-                )
-                
-                self.log_view.controls.append(ft.Container(
-                    content=instruction_button,
-                    padding=ft.padding.only(left=20, top=5, bottom=5)
-                ))
-                self.page.update()
-                
-        except Exception as e:
-            self.logger.error(f"Error in offer_transcript_creation: {str(e)}")
+    # Transcript creation has been moved to: https://github.com/Digital-Grinnell/Oral-History-Workflow
+    # The following methods (offer_transcript_creation and show_transcript_instructions) are no longer used
+    # and have been commented out. For transcript creation, please refer to the Oral-History-Workflow repository.
     
-    def show_transcript_instructions(self, mp3_path: str):
-        """
-        Display transcript creation instructions in a dialog.
-        
-        Args:
-            mp3_path: Path to the MP3 file
-        """
-        try:
-            # Get instructions from helper
-            success, instructions = open_transcript_workflow(mp3_path, self.logger)
-            
-            if not success:
-                self.logger.error(f"Failed to open transcript workflow: {instructions}")
-                return
-            
-            # Create dialog with instructions
-            def close_dialog(e):
-                dialog.open = False
-                self.page.update()
-            
-            def check_for_docx(e):
-                """Check for and process completed .docx transcript."""
-                transcript_helper = TranscriptHelper(self.logger)
-                directory = os.path.dirname(mp3_path)
-                base_name = os.path.splitext(os.path.basename(mp3_path))[0]
-                docx_path = os.path.join(directory, f"{base_name}.docx")
-                
-                colors = self.get_theme_colors()
-                
-                if os.path.exists(docx_path):
-                    # Process the transcript
-                    success, message = transcript_helper.parse_docx_transcript(docx_path)
-                    
-                    if success:
-                        # Show success message
-                        msg = f"✅ {message}"
-                        self.logger.info(msg)
-                        if hasattr(self, 'log_view') and self.log_view:
-                            self.log_view.controls.append(ft.Text(msg, size=11, color=ft.Colors.GREEN_600))
-                            self.page.update()
-                        
-                        # Close dialog
-                        close_dialog(e)
-                    else:
-                        # Show error
-                        if hasattr(self, 'log_view') and self.log_view:
-                            self.log_view.controls.append(ft.Text(
-                                f"❌ {message}",
-                                size=11,
-                                color=colors['error']
-                            ))
-                            self.page.update()
-                else:
-                    # File not found yet
-                    if hasattr(self, 'log_view') and self.log_view:
-                        self.log_view.controls.append(ft.Text(
-                            f"⏳ Transcript file not found yet: {base_name}.docx",
-                            size=11,
-                            color=ft.Colors.ORANGE_600
-                        ))
-                        self.log_view.controls.append(ft.Text(
-                            "   Please save your completed Word transcript with this exact filename.",
-                            size=10,
-                            color=colors['secondary_text']
-                        ))
-                        self.page.update()
-            
-            # Create link button to open Word Online
-            def open_word_online(e):
-                import webbrowser
-                webbrowser.open('https://word.new')
-            
-            dialog = ft.AlertDialog(
-                modal=True,
-                title=ft.Text("🎙️ Microsoft Word Transcription Instructions", size=18, weight=ft.FontWeight.BOLD),
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Text("Step 1: ", size=12, weight=ft.FontWeight.BOLD),
-                            ft.TextButton(
-                                "Open Word Online (https://word.new)",
-                                on_click=open_word_online,
-                                style=ft.ButtonStyle(padding=ft.padding.all(0)),
-                            )
-                        ], spacing=5),
-                        ft.Divider(height=1, thickness=1),
-                        ft.Text(instructions, size=12, font_family="monospace", selectable=True)
-                    ], scroll=ft.ScrollMode.AUTO, spacing=10),
-                    width=700,
-                    height=500
-                ),
-                actions=[
-                    ft.TextButton("Check for Completed Transcript", on_click=check_for_docx),
-                    ft.TextButton("Close", on_click=close_dialog)
-                ],
-                actions_alignment=ft.MainAxisAlignment.END
-            )
-            
-            self.page.overlay.append(dialog)
-            dialog.open = True
-            self.page.update()
-            
-        except Exception as e:
-            self.logger.error(f"Error showing transcript instructions: {str(e)}")
+    # def offer_transcript_creation(self, mp3_path: str, root: str):
+    #     """
+    #     Offer the user the option to create a transcript from the MP3 file.
+    #     
+    #     Args:
+    #         mp3_path: Path to the MP3 file
+    #         root: Root filename (without extension)
+    #     """
+    #     ... (method commented out - see Oral-History-Workflow repository)
+    
+    # def show_transcript_instructions(self, mp3_path: str):
+    #     """
+    #     Display transcript creation instructions in a dialog.
+    #     
+    #     Args:
+    #         mp3_path: Path to the MP3 file
+    #     """
+    #     ... (method commented out - see Oral-History-Workflow repository)
     
     def interrupt_processing(self, e):
         """Interrupt the current processing operation."""

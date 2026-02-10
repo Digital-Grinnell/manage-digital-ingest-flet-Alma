@@ -46,6 +46,8 @@ class StorageView(BaseView):
         file_paths = self.page.session.get("selected_file_paths") or []
         temp_file_info = self.page.session.get("temp_file_info") or []
         temp_objs_dir = self.page.session.get("temp_objs_directory")
+        temp_tn_dir = self.page.session.get("temp_tn_directory")
+        temp_small_dir = self.page.session.get("temp_small_directory")
         
         if not file_paths:
             self.show_snack("No files selected. Please use File Selector first.", is_error=True)
@@ -291,6 +293,52 @@ class StorageView(BaseView):
                                         os.rename(old_jpg_path, new_jpg_path)
                                         self.logger.info(f"Renamed corresponding JPG: {old_jpg_name} -> {new_jpg_name}")
                                 
+                                # Rename thumbnail in TN directory if it exists
+                                if temp_tn_dir and os.path.exists(temp_tn_dir):
+                                    old_basename = os.path.splitext(os.path.basename(old_temp_path))[0]
+                                    old_thumb_name = f"{old_basename}.jpg.clientThumb"
+                                    old_thumb_path = os.path.join(temp_tn_dir, old_thumb_name)
+                                    
+                                    # Determine new thumbnail name based on file type
+                                    if is_wav and not already_renamed_wav:
+                                        new_basename = os.path.splitext(wav_filename)[0]
+                                    elif is_tiff and not already_renamed_tiff:
+                                        new_basename = os.path.splitext(tiff_filename)[0]
+                                    elif not is_wav and not is_tiff:
+                                        new_basename = os.path.splitext(dg_filename)[0]
+                                    else:
+                                        new_basename = old_basename
+                                    
+                                    new_thumb_name = f"{new_basename}.jpg.clientThumb"
+                                    new_thumb_path = os.path.join(temp_tn_dir, new_thumb_name)
+                                    
+                                    if os.path.exists(old_thumb_path) and old_thumb_path != new_thumb_path:
+                                        os.rename(old_thumb_path, new_thumb_path)
+                                        self.logger.info(f"Renamed TN thumbnail: {old_thumb_name} -> {new_thumb_name}")
+                                
+                                # Rename small derivative in SMALL directory if it exists
+                                if temp_small_dir and os.path.exists(temp_small_dir):
+                                    old_basename = os.path.splitext(os.path.basename(old_temp_path))[0]
+                                    old_small_name = f"{old_basename}.jpg.clientViewFullSize"
+                                    old_small_path = os.path.join(temp_small_dir, old_small_name)
+                                    
+                                    # Determine new small derivative name based on file type
+                                    if is_wav and not already_renamed_wav:
+                                        new_basename = os.path.splitext(wav_filename)[0]
+                                    elif is_tiff and not already_renamed_tiff:
+                                        new_basename = os.path.splitext(tiff_filename)[0]
+                                    elif not is_wav and not is_tiff:
+                                        new_basename = os.path.splitext(dg_filename)[0]
+                                    else:
+                                        new_basename = old_basename
+                                    
+                                    new_small_name = f"{new_basename}.jpg.clientViewFullSize"
+                                    new_small_path = os.path.join(temp_small_dir, new_small_name)
+                                    
+                                    if os.path.exists(old_small_path) and old_small_path != new_small_path:
+                                        os.rename(old_small_path, new_small_path)
+                                        self.logger.info(f"Renamed SMALL derivative: {old_small_name} -> {new_small_name}")
+                                
                                 if file_idx < len(temp_file_info):
                                     info = temp_file_info[file_idx].copy()
                                     info['temp_path'] = new_temp_path
@@ -470,6 +518,52 @@ class StorageView(BaseView):
                             if os.path.exists(old_jpg_path):
                                 os.rename(old_jpg_path, new_jpg_path)
                                 self.logger.info(f"Renamed corresponding JPG: {old_jpg_name} -> {new_jpg_name}")
+                        
+                        # Rename thumbnail in TN directory if it exists
+                        if temp_tn_dir and os.path.exists(temp_tn_dir):
+                            old_basename = os.path.splitext(os.path.basename(old_temp_path))[0]
+                            old_thumb_name = f"{old_basename}.jpg.clientThumb"
+                            old_thumb_path = os.path.join(temp_tn_dir, old_thumb_name)
+                            
+                            # Determine new thumbnail name based on file type
+                            if is_wav and not already_renamed_wav:
+                                new_basename = os.path.splitext(wav_filename)[0]
+                            elif is_tiff and not already_renamed_tiff:
+                                new_basename = os.path.splitext(tiff_filename)[0]
+                            elif not is_wav and not is_tiff:
+                                new_basename = os.path.splitext(dg_filename)[0]
+                            else:
+                                new_basename = old_basename
+                            
+                            new_thumb_name = f"{new_basename}.jpg.clientThumb"
+                            new_thumb_path = os.path.join(temp_tn_dir, new_thumb_name)
+                            
+                            if os.path.exists(old_thumb_path) and old_thumb_path != new_thumb_path:
+                                os.rename(old_thumb_path, new_thumb_path)
+                                self.logger.info(f"Renamed TN thumbnail: {old_thumb_name} -> {new_thumb_name}")
+                        
+                        # Rename small derivative in SMALL directory if it exists
+                        if temp_small_dir and os.path.exists(temp_small_dir):
+                            old_basename = os.path.splitext(os.path.basename(old_temp_path))[0]
+                            old_small_name = f"{old_basename}.jpg.clientViewFullSize"
+                            old_small_path = os.path.join(temp_small_dir, old_small_name)
+                            
+                            # Determine new small derivative name based on file type
+                            if is_wav and not already_renamed_wav:
+                                new_basename = os.path.splitext(wav_filename)[0]
+                            elif is_tiff and not already_renamed_tiff:
+                                new_basename = os.path.splitext(tiff_filename)[0]
+                            elif not is_wav and not is_tiff:
+                                new_basename = os.path.splitext(dg_filename)[0]
+                            else:
+                                new_basename = old_basename
+                            
+                            new_small_name = f"{new_basename}.jpg.clientViewFullSize"
+                            new_small_path = os.path.join(temp_small_dir, new_small_name)
+                            
+                            if os.path.exists(old_small_path) and old_small_path != new_small_path:
+                                os.rename(old_small_path, new_small_path)
+                                self.logger.info(f"Renamed SMALL derivative: {old_small_name} -> {new_small_name}")
                         
                         # Update temp_file_info if available
                         if file_idx < len(temp_file_info):
