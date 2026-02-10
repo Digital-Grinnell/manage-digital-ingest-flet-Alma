@@ -116,7 +116,7 @@ class SettingsView(BaseView):
         colors = self.get_theme_colors()
         
         # File selector options for Alma (CSV is primary method)
-        file_selector_options = ["CSV", "FilePicker"]
+        file_selector_options = ["CSV", "FilePicker", "Complete Directory"]
         
         # Log available options
         self.logger.info(f"Available file selector options: {file_selector_options}")

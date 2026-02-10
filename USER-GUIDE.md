@@ -89,11 +89,13 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
 
 ### Step 3: File Selector - Choose Files
 
+The application provides three methods for file selection. Choose the method in Settings → File Selection Option.
+
 #### Method 1: Direct File Selection (FilePicker)
 1. Navigate to **File Selector** page
-2. Click **"Select Files"** to open system file picker
+2. Click **"Open File Picker"** to open system file picker
 3. Select all files you want to process
-4. Files are automatically copied to temporary directory with symbolic links
+4. Files are automatically copied to temporary directory
 5. Temp directory structure: `storage/temp/file_selector_YYYYMMDD_HHMMSS_UUID/OBJS/`
 6. Status display shows temporary file count
 
@@ -144,6 +146,33 @@ This workflow prepares digital objects for upload to Alma Digital via AWS S3.
    - Original CSV is copied to temp directory with timestamp
 2. Review copy status and file count
 3. Temp directory path is displayed and saved to session
+
+#### Method 3: Complete Directory (Resume Previous Work)
+
+**Use this method to load a previously saved complete directory and skip directly to final Alma import.**
+
+1. Navigate to **Settings** → Select **"Complete Directory"** from File Selection Option
+2. Navigate to **File Selector** page
+3. Click **"Select Directory"**
+4. Navigate to a saved backup directory (e.g., from temp preservation feature)
+5. Directory must contain:
+   - `OBJS/` subdirectory with files
+   - `TN/` subdirectory with thumbnails (.jpg.clientThumb files)
+   - `SMALL/` subdirectory with derivatives (.jpg.clientViewFullSize files) [optional]
+   - `generated_metadata_YYYYMMDD_HHMMSS.csv` file [recommended]
+   - `values.csv` file [recommended]
+6. Review directory info display:
+   - File counts for OBJS, TN, SMALL
+   - CSV file detection status
+7. Click **"Load Directory"**
+8. Status message confirms files loaded
+9. Proceed directly to **Instructions** view for final Alma upload script generation
+
+**When to use Method 3:**
+- Resuming from a previous session
+- Loading preserved temporary directories
+- All processing already complete (derivatives created, CSV generated)
+- Ready for final S3 upload to Alma
 
 ### Step 3a: CSV Generator (Optional) - Create Initial Metadata
 
@@ -437,13 +466,24 @@ If you don't have a CSV file yet, you can generate one from your selected files:
 
 Save your work and resume later without losing progress.
 
-### Saving a Session
+### Enabling Temporary Directory Preservation
 
-1. Navigate to **About** page
-2. Click **"Preserve Session & Protect Temp Directory"**
-3. Confirmation message shows number of keys saved
-4. Session data saved to: `storage/data/persistent_session.json`
-5. Temporary directory marked as protected (won't be auto-deleted)
+1. Navigate to **Settings** page
+2. Enable **"Preserve temporary directories on shutdown"** checkbox
+3. Click **"Select Backup Location"** to choose where backups will be saved
+4. All temporary directories will be automatically backed up on shutdown
+
+### Exiting and Saving Work
+
+1. Navigate to **Exit** page (or click Exit icon in app bar)
+2. Click **"Prepare Exit"** button
+   - If temp preservation is enabled: Creates timestamped backup of temp directory
+   - Backup location: `[your chosen directory]/file_selector_TIMESTAMP_backup_TIMESTAMP/`
+   - Success message shows exact backup path
+3. Once backup is complete, close the window using the red ● button
+4. Session data automatically saved to: `storage/data/persistent_session.json`
+
+**Alternative**: If you close the window directly (red ● button) without clicking "Prepare Exit", the app will attempt to backup during shutdown, but this is less reliable. Always use "Prepare Exit" when possible.
 
 ### What Gets Preserved
 
@@ -457,11 +497,19 @@ Save your work and resume later without losing progress.
 
 ### Restoring a Session
 
-- **Automatic**: Session restores on next application launch
-- Temp directory remains intact (not deleted)
-- All files (CSV, OBJS, TN, SMALL, values.csv) remain available
-- Continue work from where you left off
-- No need to re-run file selection or fuzzy search
+**Method 1: Automatic Session Restore (In-Memory)**
+- Session data automatically restores on next application launch from `persistent_session.json`
+- Limited to session variables only
+- May not include all processing results
+
+**Method 2: Load Complete Directory (Recommended)**
+1. Navigate to **Settings** → Select **"Complete Directory"** from File Selection Option
+2. Navigate to **File Selector** page
+3. Click **"Select Directory"** and choose your saved backup
+4. Click **"Load Directory"**
+5. All files (CSV, OBJS, TN, SMALL, values.csv) loaded and ready
+6. Proceed directly to **Instructions** view for Alma upload
+7. No need to re-run file selection, derivatives, or CSV generation
 
 ### When to Use Session Preservation
 
@@ -474,11 +522,17 @@ Save your work and resume later without losing progress.
 
 ### Managing Preserved Sessions
 
-- Session persists until manually deleted or overwritten
-- To clear: Delete `storage/data/persistent_session.json`
-- To update: Click preserve button again (overwrites previous)
-- Temp directory cleanup respects protection flag
-- Can have only one preserved session at a time
+**Session Data:**
+- Session data stored in: `storage/data/persistent_session.json`
+- Persists until manually deleted or overwritten
+- Automatically restored on app launch
+
+**Temporary Directory Backups:**
+- Each shutdown creates a new timestamped backup (if preservation enabled)
+- Backups accumulate in your chosen backup location
+- Each backup is a complete copy of: OBJS/, TN/, SMALL/, and all CSV files
+- Manually delete old backups to free disk space
+- Use **Complete Directory** selector to reload any backup
 
 ---
 

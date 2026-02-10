@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from logger import SnackBarHandler
 from views import (
     HomeView, AboutView, SettingsView, ExitView,
-    FilePickerSelectorView, CSVSelectorView,
+    FilePickerSelectorView, CSVSelectorView, CompleteDirSelectorView,
     DerivativesView, StorageView, LogView, InstructionsView, UpdateCSVView
 )
 import utils
@@ -95,6 +95,8 @@ class MDIApplication:
             return FilePickerSelectorView(page)
         elif selected_option == "CSV":
             return CSVSelectorView(page)
+        elif selected_option == "Complete Directory":
+            return CompleteDirSelectorView(page)
         else:
             # Default to FilePicker if no selection
             return FilePickerSelectorView(page)

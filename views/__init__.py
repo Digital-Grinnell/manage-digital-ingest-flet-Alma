@@ -14,6 +14,7 @@ from .file_selector_view import (
     FilePickerSelectorView,
     CSVSelectorView
 )
+from .complete_dir_selector_view import CompleteDirSelectorView
 from .derivatives_view import DerivativesView
 from .storage_view import StorageView
 from .instructions_view import InstructionsView
@@ -30,6 +31,7 @@ __all__ = [
     'FileSelectorView',
     'FilePickerSelectorView',
     'CSVSelectorView',
+    'CompleteDirSelectorView',
     'DerivativesView',
     'StorageView',
     'InstructionsView',

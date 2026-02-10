@@ -45,6 +45,10 @@ This Alma-specific version of Manage Digital Ingest helps you:
 ## 🎯 Key Features for Alma
 
 - **Alma Workflow Only**: Configured specifically for Alma Digital workflows
+- **Three File Selection Methods**:
+  - **FilePicker**: Direct file selection from local filesystem
+  - **CSV Matching**: Fuzzy search to match CSV metadata with files
+  - **Complete Directory**: Load previously saved work and resume from backup
 - **Fuzzy Filename Matching**: Automatically matches images to CSV metadata entries with numeric-only difference penalty
 - **CSV Metadata Generator**: Create initial CSV rows from selected files with Alma-D structure
 - **Automatic Compound Detection**: Detects multi-part objects (e.g., `album_1.jpg`, `album 2.jpg`) and generates parent/child metadata
@@ -60,8 +64,8 @@ This Alma-specific version of Manage Digital Ingest helps you:
 
 ## 📋 Alma Workflow
 
-1. **Settings**: App is pre-configured for Alma mode
-2. **File Selector**: Choose files using FilePicker or load CSV with metadata and match files
+1. **Settings**: App is pre-configured for Alma mode; choose file selection method (FilePicker, CSV, or Complete Directory)
+2. **File Selector**: Choose files using FilePicker, load CSV with metadata and match files, or load a complete saved directory
 3. **CSV Generator** (Optional): Generate initial CSV metadata rows from selected files, or upload existing metadata and merge
 4. **Create Derivatives**: Generate Alma thumbnails (TN directory with .clientThumb extension)
 5. **Update CSV**: Apply Alma-specific metadata updates (compound objects, collection IDs)

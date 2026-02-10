@@ -14,6 +14,80 @@ This document chronicles the development of the Manage Digital Ingest applicatio
 
 ## Recent Updates
 
+### Complete Directory Selector and Enhanced Exit Workflow
+
+**Date**: February 10, 2026
+
+**Change**: Added third file selection method for loading previously saved complete directories, plus improved exit workflow with temp directory preservation.
+
+**Details**:
+
+**1. Complete Directory Selector**
+- Created new `views/complete_dir_selector_view.py`
+- Added "Complete Directory" option to Settings → File Selection Options dropdown
+- Allows users to:
+  - Select a directory with OBJS/, TN/, SMALL/ subdirectories from a previous session
+  - Validate directory structure (checks for required files and folders)
+  - Load all files into session state
+  - Load existing generated CSV files
+  - Skip directly to Instructions view for final Alma upload
+- Directory validation displays:
+  - File counts for OBJS, TN, SMALL
+  - Detection status for generated_metadata CSV and values.csv
+  - Visual indicators (green checkmarks or red X's)
+- Use case: Resume work from preserved backups without re-processing
+
+**2. Improved Exit Workflow**
+- Modified `views/exit_view.py` with "Prepare Exit" button
+- When clicked:
+  - Checks if temp directory preservation is enabled in settings
+  - Creates timestamped backup of complete temp directory
+  - Shows success message with exact backup path
+  - Instructs user to close window with red ● button
+- Provides reliable temp directory backup before shutdown
+- Replaces unreliable `page.on_disconnect` method
+
+**3. Derivative Renaming in TN and SMALL**
+- Modified `views/storage_view.py` CSV generation
+- When "Generate CSV Rows" renames files in OBJS/, now also renames:
+  - Thumbnails in TN/ directory (.jpg.clientThumb files)
+  - Small derivatives in SMALL/ directory (.jpg.clientViewFullSize files)
+- Ensures all three directories stay in sync with dg_* naming
+- Applied to both standalone files and compound objects
+
+**4. Shutdown Cleanup Fixes**
+- Fixed RuntimeError during app shutdown
+- Changed from using `page.session.get()` to closure variable
+- Created `current_temp_dir` dictionary in app.py
+- Added `_update_temp_dir_tracker` function in session
+- All temp directory updates call tracker to keep closure in sync
+- Cleanup handler reads from closure instead of session (avoids async operations)
+- Eliminates "cannot schedule new futures after shutdown" error
+
+**Files Created**:
+- `views/complete_dir_selector_view.py`: New view for loading saved directories
+- `STORAGE-VIEW-BUTTONS.md`: Documentation for CSV generation buttons
+
+**Files Modified**:
+- `app.py`: Added CompleteDirSelectorView routing, closure variable for temp tracking
+- `views/__init__.py`: Exported CompleteDirSelectorView
+- `views/settings_view.py`: Added "Complete Directory" to file selection dropdown
+- `views/exit_view.py`: Added "Prepare Exit" workflow with backup functionality
+- `views/storage_view.py`: Added TN and SMALL renaming in generate_csv_rows()
+- `views/file_selector_view.py`: Added tracker calls for temp directory updates
+- `_data/picker.md`: Documented all three file selection methods
+- `USER-GUIDE.md`: Added Method 3 documentation, updated Session Preservation section
+- `README.md`: Added Complete Directory to key features
+
+**Benefits**:
+- Users can now resume work from any saved backup
+- Reliable temp directory preservation on exit
+- All derivative files stay synchronized with OBJS naming
+- No shutdown errors during cleanup
+- Clear workflow for saving and resuming work
+
+---
+
 ### Enhanced Compound Object Detection for Trailing Numbers
 
 **Date**: February 3, 2026
