@@ -26,6 +26,7 @@ class StorageView(BaseView):
         self.merge_button = None
         self.metadata_csv_path = None
         self.metadata_df = None
+        self.compound_checkbox = None
     
     def load_csv_headings(self):
         """Load CSV headings from verified headings file."""
@@ -59,63 +60,80 @@ class StorageView(BaseView):
             self.show_snack("Failed to load CSV headings", is_error=True)
             return
         
+        # Check if manual compound object processing is requested
+        force_compound = self.compound_checkbox and self.compound_checkbox.value
+        
         # First pass: Detect compound objects by grouping files with _<integer> or <space><integer> pattern
         compound_groups = {}
         standalone_files = []
         files_with_basename = {}  # Track files that might be implicit part 1
         
-        for file_path in file_paths:
-            filename = os.path.basename(file_path)
-            name_without_ext = os.path.splitext(filename)[0]
+        # If manual compound processing is enabled and we have 2+ files, force all files into one compound
+        if force_compound and len(file_paths) >= 2:
+            self.logger.info(f"Manual compound object processing: forcing {len(file_paths)} files into a single compound")
             
-            # Check if filename ends with _<integer> or <space><integer>
-            match = re.match(r'^(.+)[_ ](\d+)$', name_without_ext)
-            if match:
-                base_name = match.group(1)
-                part_number = int(match.group(2))
+            # Generate a base name from the first file or use a generic name
+            first_filename = os.path.basename(file_paths[0])
+            base_name = os.path.splitext(first_filename)[0]
+            # Remove any trailing numbers and separators from base name
+            base_name = re.sub(r'[_ ]\d+$', '', base_name)
+            
+            # Create compound group with all files numbered sequentially
+            compound_groups[base_name] = [(i + 1, file_path) for i, file_path in enumerate(file_paths)]
+        else:
+            # Use automatic detection
+            for file_path in file_paths:
+                filename = os.path.basename(file_path)
+                name_without_ext = os.path.splitext(filename)[0]
                 
-                if base_name not in compound_groups:
-                    compound_groups[base_name] = []
-                compound_groups[base_name].append((part_number, file_path))
-            else:
-                # This might be a standalone file OR an implicit part 1
-                # Store it temporarily to check later
-                files_with_basename[name_without_ext] = file_path
-        
-        # Second pass: Check if any basename files have corresponding _2, _3, etc.
-        # If so, treat the basename file as part 1 of a compound
-        for basename, base_file_path in files_with_basename.items():
-            if basename in compound_groups:
-                # This basename has numbered parts, so this is part 1
-                compound_groups[basename].insert(0, (1, base_file_path))
-                self.logger.info(f"Detected implicit part 1 for compound '{basename}': {os.path.basename(base_file_path)}")
-            else:
-                # No numbered parts found, treat as standalone
-                standalone_files.append(base_file_path)
-        
-        # Third pass: Regroup files where a "part 1" with trailing number exists in compound_groups
-        # E.g., "Silverman and Fardman 15" (part=15 of "Silverman and Fardman") should actually be
-        # part 1 of "Silverman and Fardman 15" group (which has parts 2 and 3)
-        regrouped = {}
-        for base_name in list(compound_groups.keys()):
-            parts = compound_groups[base_name]
-            # Check if any part in this group could actually be part 1 of another group
-            for part_num, file_path in parts[:]:  # Iterate over copy
-                filename_noext = os.path.splitext(os.path.basename(file_path))[0]
-                # Check if this filename (which is base_name + separator + part_num) exists as a basename in compound_groups
-                if filename_noext in compound_groups and filename_noext != base_name:
-                    # This file should be part 1 of the filename_noext group, not part of base_name group
-                    if filename_noext not in regrouped:
-                        regrouped[filename_noext] = []
-                    regrouped[filename_noext].append((1, file_path))  # It's part 1 of the other group
-                    parts.remove((part_num, file_path))
-                    self.logger.info(f"Regrouped '{os.path.basename(file_path)}' as part 1 of compound '{filename_noext}'")
-        
-        # Apply regrouping
-        for new_base, new_parts in regrouped.items():
-            if new_base in compound_groups:
-                # Prepend part 1 to the existing group
-                compound_groups[new_base] = new_parts + compound_groups[new_base]
+                # Check if filename ends with _<integer> or <space><integer>
+                match = re.match(r'^(.+)[_ ](\d+)$', name_without_ext)
+                if match:
+                    base_name = match.group(1)
+                    part_number = int(match.group(2))
+                    
+                    if base_name not in compound_groups:
+                        compound_groups[base_name] = []
+                    compound_groups[base_name].append((part_number, file_path))
+                else:
+                    # This might be a standalone file OR an implicit part 1
+                    # Store it temporarily to check later
+                    files_with_basename[name_without_ext] = file_path
+            
+            # Second pass: Check if any basename files have corresponding _2, _3, etc.
+            # If so, treat the basename file as part 1 of a compound
+            for basename, base_file_path in files_with_basename.items():
+                if basename in compound_groups:
+                    # This basename has numbered parts, so this is part 1
+                    compound_groups[basename].insert(0, (1, base_file_path))
+                    self.logger.info(f"Detected implicit part 1 for compound '{basename}': {os.path.basename(base_file_path)}")
+                else:
+                    # No numbered parts found, treat as standalone
+                    standalone_files.append(base_file_path)
+            
+            # Third pass: Regroup files where a "part 1" with trailing number exists in compound_groups
+            # E.g., "Silverman and Fardman 15" (part=15 of "Silverman and Fardman") should actually be
+            # part 1 of "Silverman and Fardman 15" group (which has parts 2 and 3)
+            regrouped = {}
+            for base_name in list(compound_groups.keys()):
+                parts = compound_groups[base_name]
+                # Check if any part in this group could actually be part 1 of another group
+                for part_num, file_path in parts[:]:  # Iterate over copy
+                    filename_noext = os.path.splitext(os.path.basename(file_path))[0]
+                    # Check if this filename (which is base_name + separator + part_num) exists as a basename in compound_groups
+                    if filename_noext in compound_groups and filename_noext != base_name:
+                        # This file should be part 1 of the filename_noext group, not part of base_name group
+                        if filename_noext not in regrouped:
+                            regrouped[filename_noext] = []
+                        regrouped[filename_noext].append((1, file_path))  # It's part 1 of the other group
+                        parts.remove((part_num, file_path))
+                        self.logger.info(f"Regrouped '{os.path.basename(file_path)}' as part 1 of compound '{filename_noext}'")
+            
+            # Apply regrouping
+            for new_base, new_parts in regrouped.items():
+                if new_base in compound_groups:
+                    # Prepend part 1 to the existing group
+                    compound_groups[new_base] = new_parts + compound_groups[new_base]
         
         # Sort compound groups by part number
         for base_name in compound_groups:
@@ -1196,6 +1214,14 @@ class StorageView(BaseView):
             disabled=True  # Will be enabled when both CSV data and metadata are available
         )
         
+        # Create checkbox for manual compound object processing
+        self.compound_checkbox = ft.Checkbox(
+            label="Process as a Compound Object",
+            value=False,
+            disabled=file_count < 2,
+            tooltip="When checked, all selected files will be formatted as a single compound object (requires 2+ files)"
+        )
+        
         return ft.Column(
             controls=[
                 *self.create_page_header("CSV Generator", include_log_button=True),
@@ -1234,6 +1260,7 @@ class StorageView(BaseView):
                             padding=10,
                             margin=ft.margin.only(top=5, bottom=10)
                         ),
+                        self.compound_checkbox,
                         ft.Row([
                             ft.ElevatedButton(
                                 text="Generate CSV Rows",

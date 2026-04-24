@@ -1,9 +1,9 @@
 {
-  "last_directory": "/Users/mcfatem/Reunion-2025-Oral-Histories",
+  "last_directory": "/Users/mcfatem/Downloads/Developmental-Dilemas",
   "window-height": 800,
   "selected_theme": "Light",
   "selected_mode": "Alma",
-  "selected_file_option": "FilePicker",
+  "selected_file_option": "CSV",
   "selected_storage": "NONE",
   "selected_collection": "TDPS_archive",
   "azure_base_url": "https://dgobjects.blob.core.windows.net/",
@@ -402,5 +402,5 @@
     }
   ],
   "preserve_temp_directory": true,
-  "temp_backup_directory": "/Users/mcfatem/Reunion-2025-Oral-Histories"
+  "temp_backup_directory": "/Users/mcfatem/Downloads/Developmental-Dilemas"
 }

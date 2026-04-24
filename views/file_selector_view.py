@@ -1375,8 +1375,8 @@ class CSVSelectorView(FileSelectorView):
                     csv_filenames = self.page.session.get("csv_filenames_for_matched") or []
                     selected_paths = self.page.session.get("selected_file_paths") or []
                     
-                    # Since selected_files only contains matched paths, and matched_ratios align with them
-                    for i, filepath in enumerate(selected_files):
+                    # Since temp_files only contains matched paths, and matched_ratios align with them
+                    for i, filepath in enumerate(temp_files):
                         if filepath:  # Should all be absolute paths
                             ratio = matched_ratios[i] if i < len(matched_ratios) else 100
                             target_filename = csv_filenames[i] if i < len(csv_filenames) else os.path.basename(filepath)
@@ -1531,6 +1531,7 @@ class CSVSelectorView(FileSelectorView):
 
             # Determine subtitle based on search completion status
             search_directory = self.page.session.get("search_directory")
+            has_full_paths = display_matched_count > 0
             
             if has_full_paths and search_completed:
                 # Search completed with matches
