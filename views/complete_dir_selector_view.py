@@ -175,7 +175,7 @@ class CompleteDirSelectorView(BaseView):
             self.page.session.set("temp_directory", self.selected_directory)
             # Update tracker for shutdown cleanup
             tracker = self.page.session.get("_update_temp_dir_tracker")
-            if tracker:
+            if tracker and callable(tracker):
                 tracker(self.selected_directory)
             
             self.page.session.set("temp_objs_directory", objs_dir)
@@ -232,7 +232,7 @@ class CompleteDirSelectorView(BaseView):
         self.page.session.set("temp_directory", None)
         # Update tracker for shutdown cleanup
         tracker = self.page.session.get("_update_temp_dir_tracker")
-        if tracker:
+        if tracker and callable(tracker):
             tracker(None)
         self.page.session.set("temp_files", [])
         self.page.session.set("selected_file_paths", [])

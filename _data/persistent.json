@@ -1,9 +1,9 @@
 {
-  "last_directory": "/Users/mcfatem/Downloads/Developmental-Dilemas",
+  "last_directory": "/Volumes/Acasis1TB/OHM-data/Anonymous_85_MERGED--dg_1776706285",
   "window-height": 800,
   "selected_theme": "Light",
   "selected_mode": "Alma",
-  "selected_file_option": "CSV",
+  "selected_file_option": "FilePicker",
   "selected_storage": "NONE",
   "selected_collection": "TDPS_archive",
   "azure_base_url": "https://dgobjects.blob.core.windows.net/",
@@ -402,5 +402,5 @@
     }
   ],
   "preserve_temp_directory": true,
-  "temp_backup_directory": "/Users/mcfatem/Downloads/Developmental-Dilemas"
+  "temp_backup_directory": "/Users/mcfatem/Downloads/Reunion-2025-Oral-Histories"
 }

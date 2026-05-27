@@ -186,7 +186,7 @@ class FileSelectorView(BaseView):
             self.page.session.set("temp_directory", temp_dir)
             # Update tracker for shutdown cleanup
             tracker = self.page.session.get("_update_temp_dir_tracker")
-            if tracker:
+            if tracker and callable(tracker):
                 tracker(temp_dir)
             self.page.session.set("temp_objs_directory", objs_dir)
             self.page.session.set("temp_tn_directory", tn_dir)
@@ -912,7 +912,7 @@ class CSVSelectorView(FileSelectorView):
                 self.page.session.set("temp_directory", temp_dir)
                 # Update tracker for shutdown cleanup
                 tracker = self.page.session.get("_update_temp_dir_tracker")
-                if tracker:
+                if tracker and callable(tracker):
                     tracker(temp_dir)
                 self.page.session.set("temp_objs_directory", objs_dir)
                 self.page.session.set("temp_tn_directory", tn_dir)
@@ -1909,7 +1909,7 @@ class CSVSelectorView(FileSelectorView):
                     self.page.session.set("temp_directory", temp_dir)
                     # Update tracker for shutdown cleanup
                     tracker = self.page.session.get("_update_temp_dir_tracker")
-                    if tracker:
+                    if tracker and callable(tracker):
                         tracker(temp_dir)
                     self.logger.info(f"Created temporary directory for placeholders: {temp_dir}")
             
